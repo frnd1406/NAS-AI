@@ -2,7 +2,7 @@
 
 Technische Referenz für **NAS.AI** — ein sicheres, selbst-gehostetes NAS mit Zero-Knowledge-Verschlüsselung und einem gehärteten Go-Backend.
 
-**Version:** 2.1 · **Betriebsmodus:** Backend-only (API + PostgreSQL + Redis); weitere Dienste optional.
+**Version:** 2.1.1 · **Betriebsmodus:** Backend-only (API + PostgreSQL + Redis); weitere Dienste optional.
 
 ---
 

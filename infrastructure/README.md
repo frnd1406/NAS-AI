@@ -1,8 +1,6 @@
 # NAS.AI Infrastructure
 
-**Version:** 2.1  
-**Status:** Phase 2.3 - Encryption  
-**Updated:** 2025-12-07
+**Version:** 2.1.1
 
 ---
 
