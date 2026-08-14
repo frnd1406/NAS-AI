@@ -1,0 +1,62 @@
+[
+  {
+    "name": "webui",
+    "url": "http://localhost:3001/health",
+    "registered_at": "2025-11-22T18:00:00Z",
+    "tags": [
+      "frontend",
+      "react",
+      "development"
+    ],
+    "metadata": {
+      "env": "development",
+      "framework": "react+vite",
+      "type": "frontend"
+    }
+  },
+  {
+    "name": "ai-knowledge-agent",
+    "url": "http://localhost:5000/health",
+    "registered_at": "2025-12-04T14:30:00Z",
+    "tags": [
+      "ai",
+      "core",
+      "python",
+      "production"
+    ],
+    "metadata": {
+      "env": "production",
+      "language": "python",
+      "model": "all-MiniLM-L6-v2",
+      "type": "inference"
+    }
+  },
+  {
+    "name": "nas-api",
+    "url": "http://localhost:8080/health",
+    "registered_at": "2025-12-04T15:26:33.030864709+01:00",
+    "tags": [
+      "core",
+      "api"
+    ],
+    "metadata": {
+      "language": "go",
+      "type": "backend"
+    }
+  },
+  {
+    "name": "nas-api-local",
+    "url": "http://localhost:8080/health",
+    "registered_at": "2025-11-22T18:00:00Z",
+    "tags": [
+      "core",
+      "api",
+      "development"
+    ],
+    "metadata": {
+      "env": "development",
+      "language": "go",
+      "type": "backend"
+    }
+  }
+]

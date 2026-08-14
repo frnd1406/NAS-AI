@@ -1,0 +1,142 @@
+# NAS.AI - Deployment fuer Raspberry Pi (ARM64), Single-Node, Docker Compose.
+#
+# Phase 1: Kern-Stack (postgres, redis, api[Host-Netz/mDNS], webui, chromadb).
+# Ollama entfaellt bewusst; die AI-Suche ueber ChromaDB wird in Phase 2 im
+# ai_knowledge_agent verdrahtet (chromadb laeuft hier schon als Infrastruktur).
+#
+# Wichtig:
+#  - Die api laeuft im HOST-Netz (network_mode: host), damit ihr mDNS-Advertising
+#    (_nasai._tcp) das LAN erreicht und Desktop/Handy den Server finden.
+#  - postgres/redis/chromadb sind nur auf 127.0.0.1 veroeffentlicht; die api
+#    (Host-Netz) erreicht sie ueber localhost, das LAN nicht.
+#  - Postgres bleibt in Phase 1 das pgvector-Image (init.sql legt die vector-
+#    Extension an); Umstieg auf plain postgres kommt mit der Phase-2-Migration.
+#  - Env kommt aus .env (von install.sh mit frischen Secrets erzeugt).
+#  - Auf dem Pi NATIV bauen: `docker compose -f docker-compose.pi.yml build`.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16   # multi-arch (arm64); Phase 2 -> plain postgres
+    container_name: nas-postgres
+    environment:
+      POSTGRES_DB: nas_db
+      POSTGRES_USER: nas_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ${SSD_PATH}/postgres:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nas_user -d nas_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [nas-network]
+
+  redis:
+    image: redis:7-alpine
+    container_name: nas-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - ${SSD_PATH}/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks: [nas-network]
+
+  chromadb:
+    image: chromadb/chroma:latest   # Vektor-DB fuer die semantische Suche (Phase 2)
+    container_name: nas-chromadb
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ${SSD_PATH}/chroma:/data
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    restart: unless-stopped
+    networks: [nas-network]
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: nas-api
+    user: root
+    network_mode: host            # mDNS-Advertising im LAN + api direkt auf :8080
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETUID
+      - SETGID
+    environment:
+      PORT: "8080"
+      BIND_ADDR: "${LAN_IP}"      # API nur an LAN-IPv4 binden; leer -> 0.0.0.0. Kein oeffentlicher IPv6-Listener (Defense-in-Depth zusaetzlich zu ufw)
+      ENV: production             # Prod-Modus: gin release, Secure-Cookies. Braucht TLS_CERT_FILE/KEY (fail-fast)
+      TLS_CERT_FILE: "/app/tls/server.crt"   # von eigener Root-CA signiert (SANs: nasserver.local, 192.168.1.81, localhost)
+      TLS_KEY_FILE: "/app/tls/server.key"
+      LOG_LEVEL: info
+      JWT_SECRET: ${JWT_SECRET}
+      MONITORING_TOKEN: ${MONITORING_TOKEN}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      DATABASE_URL: "postgres://nas_user:${DB_PASSWORD}@127.0.0.1:5432/nas_db?sslmode=disable"
+      DB_HOST: "127.0.0.1"
+      DB_PORT: "5432"
+      DB_USER: "nas_user"
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: "nas_db"
+      REDIS_URL: "127.0.0.1:6379"
+      DEV_TLS_DIR: "/app/dev-certs"
+      CORS_ORIGINS: "http://${LAN_HOST}:3001,http://${LAN_HOST}"
+      FRONTEND_URL: "http://${LAN_HOST}:3001"
+      RATE_LIMIT_PER_MIN: "100"
+      # mDNS ist aktiv (kein MDNS_DISABLE gesetzt)
+    volumes:
+      - ${RAID_PATH}/data:/mnt/data
+      - ${RAID_PATH}/backups:/mnt/backups
+      - ${RAID_PATH}/encrypted:/media/user      # Tresor/verschluesselter Speicher (persistent, nobody-owned)
+      - ${SSD_PATH}/dev-tls:/app/dev-certs      # (Dev-Fallback, in Prod ungenutzt)
+      - ${SSD_PATH}/tls:/app/tls:ro             # Prod-Cert (Root-CA-signiert), read-only, nobody-lesbar
+      # /host-Mount ENTFERNT (2026-08-09): war `/:/host:ro` (ganzes Host-FS read-only).
+      # hardware_service.go nutzte es nur zum Statfs von /host{,/home,/media} -> auf diesem Pi
+      # alle = SD-Rootfs (redundant), kein Dateiinhalt gebraucht. Entfernt = keine Host-Exponierung.
+      # Falls Laufwerks-UI spaeter gewuenscht: gezielt EIN read-only Pfad, nie ganzes /.
+    mem_swappiness: 0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "https://${LAN_HOST}:8080"
+    container_name: nas-webui
+    environment:
+      VITE_API_BASE_URL: "https://${LAN_HOST}:8080"
+    ports:
+      - "3001:80"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    networks: [nas-network]
+
+networks:
+  nas-network:
+    driver: bridge
