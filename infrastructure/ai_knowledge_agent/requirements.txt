@@ -1,0 +1,8 @@
+# Ollama-based RAG Agent (no local ML models needed)
+psycopg2-binary==2.9.9
+pgvector==0.2.5
+flask==3.0.3
+gunicorn>=21.0.0
+requests>=2.31.0
+numpy>=1.24.0
+redis>=5.0.0

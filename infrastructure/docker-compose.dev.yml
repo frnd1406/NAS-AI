@@ -1,0 +1,297 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nas-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+    healthcheck:
+      test: [ "CMD", "ollama", "list" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: nas-api-postgres
+    environment:
+      POSTGRES_DB: nas_db
+      POSTGRES_USER: nas_user
+      POSTGRES_PASSWORD: nas_dev_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U nas_user -d nas_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+      - agent-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: nas-api-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    command: redis-server --appendonly yes
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+      - agent-network
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: nas-api
+    user: root
+    dns:
+      - 127.0.0.11
+    environment:
+      PORT: 8080
+      ENV: development
+      LOG_LEVEL: debug
+      JWT_SECRET: "dev_jwt_secret_32_chars_minimum_please_1234"
+      MONITORING_TOKEN: "CHANGE_ME_MONITORING_TOKEN"
+      DATABASE_URL: "postgres://nas_user:nas_dev_password@postgres:5432/nas_db?sslmode=disable"
+      # Explicit DB Env Vars to override defaults
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      DB_USER: "nas_user"
+      DB_PASSWORD: "nas_dev_password"
+      REDIS_URL: "redis:6379"
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:4173,http://192.168.x.x:5173,http://192.168.x.x:4173,http://localhost:3001,http://192.168.x.x:3001,https://example.com,http://example.com"
+      FRONTEND_URL: "https://example.com"
+      EMAIL_FROM: "nas.ai@example.com"
+      RATE_LIMIT_PER_MIN: 100
+      INTERNAL_API_SECRET: "CHANGE_ME_INTERNAL_API_SECRET"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - nas_data:/mnt/data
+      - nas_backups:/mnt/backups
+      # HOST FILESYSTEM: Read-only access for real drive detection
+      - /:/host:ro
+      # SECURITY: Vault ist NICHT persistent (Zero-Knowledge)
+      # Wenn Container neustartet → Vault weg → User muss neu einrichten
+      # Das ist GEWOLLT für maximale Sicherheit!
+      # Optional: Uncomment für Convenience (mit Sicherheitsrisiko)
+      # - nas_vault:/var/lib/nas/vault
+      # SECURITY: Operation Ironclad - Prevent RAM from leaking to swap
+    mem_swappiness: 0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+      - agent-network
+
+  webui:
+    build:
+      context: ./webui
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "http://192.168.x.x:8080"
+    container_name: nas-webui
+    ports:
+      - "3001:80"
+    environment:
+      VITE_API_BASE_URL: "http://192.168.x.x:8080"
+    depends_on:
+      api:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+
+  monitoring:
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile
+    container_name: nas-monitoring
+    environment:
+      API_URL: "http://api:8080/api/v1/system/metrics"
+      MONITORING_TOKEN: "CHANGE_ME_MONITORING_TOKEN"
+      AGENT_ID: "dev-agent"
+      INTERVAL_SECONDS: 10
+    depends_on:
+      api:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+
+  analysis-agent:
+    build:
+      context: ./analysis
+      dockerfile: Dockerfile
+    container_name: nas-analysis-agent
+    environment:
+      DATABASE_URL: "postgres://nas_user:nas_dev_password@postgres:5432/nas_db?sslmode=disable"
+      INTERVAL_SECONDS: 10
+      LOOKBACK_SECONDS: 60
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+
+  pentester-agent:
+    build:
+      context: ./pentester
+      dockerfile: Dockerfile
+    container_name: nas-pentester-agent
+    depends_on:
+      api:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - agent-network
+      - nas-network
+
+  ai-knowledge-agent:
+    build:
+      context: ./ai_knowledge_agent
+      dockerfile: Dockerfile
+    container_name: nas-ai-knowledge-agent
+    environment:
+      DATABASE_URL: "postgres://nas_user:nas_dev_password@postgres:5432/nas_db"
+      PGHOST: "postgres"
+      PGPORT: "5432"
+      PGDATABASE: "nas_db"
+      PGUSER: "nas_user"
+      PGPASSWORD: "nas_dev_password"
+      OLLAMA_URL: "http://host.docker.internal:11434"
+      EMBEDDING_MODEL: "mxbai-embed-large"
+      LLM_MODEL: "llama3.2"
+      INTERNAL_API_SECRET: "CHANGE_ME_INTERNAL_API_SECRET"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - nas_data:/mnt/data
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    # SECURITY: Operation Ironclad - Prevent RAM from leaking to swap
+    mem_swappiness: 0
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+
+  icloudpd:
+    image: boredazfcuk/icloudpd:latest
+    container_name: nas-icloudpd
+    env_file:
+      - ./.env.dev
+    environment:
+      - apple_id=${ICLOUD_APPLE_ID}
+      - TZ=Europe/Berlin
+      - synchronisation_interval=86400
+      - download_path=/icloud
+      - folder_structure={:%Y/%m/%d}
+      - photo_size=original
+      - skip_videos=false
+    volumes:
+      - icloud_photos:/icloud
+      - icloud_config:/config
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - nas-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nas_data:
+    driver: local
+  nas_backups:
+    driver: local
+  nas_vault:
+    driver: local
+  ollama_models:
+    driver: local
+  icloud_photos:
+    driver: local
+  icloud_config:
+    driver: local
+
+networks:
+  nas-network:
+    driver: bridge
+  agent-network:
+    driver: bridge

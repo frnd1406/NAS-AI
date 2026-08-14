@@ -1,0 +1,58 @@
+# NAS API Configuration Example
+# This file shows how to configure the API using YAML instead of environment variables
+# Copy this to config.yaml and customize for your environment
+
+# Server Configuration
+port: "8080"
+env: "development"  # development, staging, production, test
+log_level: "info"   # debug, info, warn, error
+
+# Rate Limiting
+rate_limit_per_min: 100
+
+# CORS Configuration (Whitelist - NO wildcards allowed!)
+cors_origins: "http://localhost:5173,http://localhost:3000"
+
+# Monitoring Agent
+monitoring_token: "monitoring-token-dev-123456" # required for /monitoring/ingest
+
+# JWT Configuration (REQUIRED - no defaults!)
+# Provide via env: JWT_SECRET or JWT_SECRET_FILE (path to secret managed by Vault/Docker)
+# jwt_secret: ""  # intentionally unused to avoid committing secrets in config
+jwt_secret_file: "/run/secrets/jwt_secret"
+
+# Database Configuration
+# Option 1: Full connection URL
+database_url: "postgres://nas_user:CHANGE_ME_DB_PASSWORD@localhost:5433/nas_db?sslmode=disable"
+
+# Option 2: Individual components (used if database_url is not set)
+db_host: "localhost"
+db_port: "5433"
+db_user: "nas_user"
+db_password: "CHANGE_ME_DB_PASSWORD"
+db_name: "nas_db"
+
+# Redis Configuration
+# Option 1: Full URL
+redis_url: "localhost:6380"
+
+# Option 2: Individual components (used if redis_url is not set)
+redis_host: "localhost"
+redis_port: "6380"
+
+# Email Configuration (Resend)
+resend_api_key: "YOUR_RESEND_API_KEY"
+email_from: "NAS.AI <noreply@your-domain.com>"
+frontend_url: "https://your-domain.com"
+
+# Cloudflare Configuration
+cloudflare_api_token: "YOUR_CLOUDFLARE_API_TOKEN"
+cloudflare_r2_bucket: "nas-ai-storage"
+
+# Configuration Priority (highest to lowest):
+# 1. Environment variables (always override)
+# 2. .env file
+# 3. config.yaml file (this file)
+# 4. Default values (in code)
+#
+# Example: If JWT_SECRET is set in env vars, it overrides this YAML file
