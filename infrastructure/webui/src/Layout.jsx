@@ -29,6 +29,7 @@ import {
   ChevronLeft
 } from "lucide-react";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { PowerStatusBanner } from "./components/PowerStatusBanner";
 import { useSwipe } from "./hooks/useSwipe";
 import { useVault } from "./context/VaultContext";
 import { VaultModal } from "./components/Vault/VaultModal";
@@ -356,6 +357,7 @@ export default function Layout({ title = "NAS AI v1.0.0" }) {
 
           {/* Page Content */}
           <div className="p-6 lg:p-10 max-w-[1600px] mx-auto">
+            <PowerStatusBanner />
             <Outlet />
           </div>
         </main>

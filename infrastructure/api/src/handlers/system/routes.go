@@ -92,6 +92,7 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 	// Public (Hardware Stats - Runtime)
 	rg.GET("/system/hardware/storage", h.hardwareHandler.GetStorageInfoHandler())
 	rg.GET("/system/hardware/network", h.hardwareHandler.GetNetworkInfoHandler())
+	rg.GET("/system/hardware/ups", h.hardwareHandler.GetUPSInfoHandler())
 
 	// Public (Frontend Logging)
 	rg.POST("/system/logs/frontend", FrontendLogHandler(h.logger))

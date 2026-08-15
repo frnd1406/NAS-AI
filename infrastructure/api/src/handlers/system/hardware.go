@@ -42,6 +42,21 @@ func (h *HardwareHandler) GetStorageInfoHandler() gin.HandlerFunc {
 	}
 }
 
+// GetUPSInfoHandler returns the current UPS (mains power / battery) status.
+// @Summary Get UPS status
+// @Description Get the live power state of the UPS via NUT (online / on battery / low battery)
+// @Tags System
+// @Produce json
+// @Success 200 {object} operations.UPSInfo
+// @Router /system/hardware/ups [get]
+func (h *HardwareHandler) GetUPSInfoHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// GetUPSInfo never returns nil; an unreachable UPS yields a graceful
+		// {"available": false} snapshot rather than a 500.
+		c.JSON(http.StatusOK, h.hardwareService.GetUPSInfo())
+	}
+}
+
 // GetNetworkInfoHandler returns network interface statistics
 // @Summary Get network info
 // @Description Get current network interface stats
