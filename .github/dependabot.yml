@@ -1,0 +1,51 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "type:chore"
+      - "priority:medium"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "gomod"
+    directory: "/infrastructure/api"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "type:security"
+      - "type:chore"
+      - "priority:medium"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "type:security"
+      - "type:chore"
+      - "priority:high"
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/infrastructure/webui"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "type:chore"
+      - "priority:medium"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore"
+      include: "scope"

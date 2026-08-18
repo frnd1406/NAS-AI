@@ -60,6 +60,9 @@ infrastructure/api/bin/
 .agents/
 .codex/
 AGENTS.md
+BOT_POLICY.md
+PROJECT_POLICY.md
+LOCAL_DEV_POLICY.md
 *.iws
 *.ipr
 

@@ -80,6 +80,7 @@ Konfiguration über `.env` (Secrets werden nie eingecheckt — siehe `.env.templ
 - [**Backend-API**](./infrastructure/api/README.md)
 - [**Security-Handbuch**](./docs/security/SECURITY_HANDBOOK.md)
 - [**Developer Guide**](./docs/development/DEV_GUIDE.md)
+- [**Contributing Guide**](./CONTRIBUTING.md)
 
 ---
 
