@@ -73,3 +73,25 @@ func TestBuildUPSInfoNumbers(t *testing.T) {
 		t.Errorf("type = %q", info.Type)
 	}
 }
+
+func TestBuildUPSInfoEmergency(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     string
+		wantActive bool
+		wantNotice string
+	}{
+		{"online", "OL", false, ""},
+		{"on battery", "OB", true, "Notfallstrom — Server kann jeden Moment herunterfahren. Nichts mehr am Server machen."},
+		{"low battery", "OB LB", true, "Server fährt herunter."},
+	}
+	for _, c := range cases {
+		info := buildUPSInfo("greencell", map[string]string{"ups.status": c.status})
+		if info.EmergencyActive != c.wantActive {
+			t.Errorf("%s: emergency_active=%v, want %v", c.name, info.EmergencyActive, c.wantActive)
+		}
+		if info.Notice != c.wantNotice {
+			t.Errorf("%s: notice=%q, want %q", c.name, info.Notice, c.wantNotice)
+		}
+	}
+}
