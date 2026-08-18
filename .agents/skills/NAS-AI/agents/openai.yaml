@@ -1,0 +1,6 @@
+interface:
+  display_name: "NAS AI"
+  short_description: "Repo-specific patterns and workflows for NAS-AI"
+  default_prompt: "Use the NAS-AI repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
