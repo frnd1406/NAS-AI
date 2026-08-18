@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2.0
+- UPS monitoring: new `GET /api/v1/system/hardware/ups` endpoint reading NUT over TCP (read-only), exposing online / on-battery / low-battery state.
+- Power alert banner and live UPS status card in the dashboard: on-battery warning, low-battery escalation, and an all-clear once mains power returns.
+
 ## v2.1.1
 - Production TLS via a private Root CA (replaces self-signed / trust-on-first-use).
 - Hardened API container: runs unprivileged (`nobody`, `cap_drop: ALL`, `no-new-privileges`).
