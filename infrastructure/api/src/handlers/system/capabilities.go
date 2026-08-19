@@ -128,19 +128,3 @@ func Capabilities(benchmarkService *operations.BenchmarkService) gin.HandlerFunc
 		c.JSON(http.StatusOK, response)
 	}
 }
-
-// CapabilitiesSimple is a simplified handler that doesn't require BenchmarkService
-// Use this if benchmark service isn't initialized yet
-func CapabilitiesSimple() gin.HandlerFunc {
-	systemModel := detectSystemModel()
-
-	return func(c *gin.Context) {
-		c.JSON(http.StatusOK, CapabilitiesResponse{
-			SystemModel:         systemModel,
-			EncryptionSpeedMBps: 0,
-			CPUCores:            runtime.NumCPU(),
-			Algorithm:           "XChaCha20-Poly1305",
-			BenchmarkReady:      false,
-		})
-	}
-}
