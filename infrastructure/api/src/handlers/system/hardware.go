@@ -57,6 +57,21 @@ func (h *HardwareHandler) GetUPSInfoHandler() gin.HandlerFunc {
 	}
 }
 
+// GetUpdaterStatusHandler returns the host OS update status (read-only).
+// @Summary Get host updater status
+// @Description Read-only host update posture (pending upgrades, security count, reboot due) sourced from a cache file written by the privileged host updater. The API never triggers updates.
+// @Tags System
+// @Produce json
+// @Success 200 {object} operations.UpdaterStatus
+// @Router /system/updater-status [get]
+func (h *HardwareHandler) GetUpdaterStatusHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// GetUpdaterStatus never returns nil; a missing cache yields a graceful
+		// {"available": false} snapshot rather than a 500.
+		c.JSON(http.StatusOK, h.hardwareService.GetUpdaterStatus())
+	}
+}
+
 // GetNetworkInfoHandler returns network interface statistics
 // @Summary Get network info
 // @Description Get current network interface stats

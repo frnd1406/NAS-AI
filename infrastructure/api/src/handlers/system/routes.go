@@ -111,6 +111,9 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 	{
 		protected.GET("/system/metrics", SystemMetricsListHandler(h.systemMetricsRepo, h.logger))
 		protected.GET("/system/metrics/live", SystemMetricsLiveHandler(h.logger))
+		// Host update posture (reveals hostname + kernel version -> recon-sensitive,
+		// so authenticated like metrics; read-only, never triggers the updater).
+		protected.GET("/system/updater-status", h.hardwareHandler.GetUpdaterStatusHandler())
 		protected.GET("/system/alerts", SystemAlertsListHandler(h.systemAlertsRepo, h.logger))
 		protected.GET("/jobs/:id", GetJobStatusHandler(h.jobService, h.logger)) // Generic job status
 
