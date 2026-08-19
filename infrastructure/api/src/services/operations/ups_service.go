@@ -14,21 +14,23 @@ import (
 // (upsd). It is designed to be safe to expose to the frontend: no credentials,
 // no host paths, just the power/battery state needed to drive an alert banner.
 type UPSInfo struct {
-	Available      bool      `json:"available"`
-	Name           string    `json:"name"`
-	State          string    `json:"state"` // online | on_battery | low_battery | unknown | unavailable
-	RawStatus      string    `json:"raw_status,omitempty"`
-	OnBattery      bool      `json:"on_battery"`
-	LowBattery     bool      `json:"low_battery"`
-	BatteryCharge  *int      `json:"battery_charge,omitempty"`
-	BatteryVoltage *float64  `json:"battery_voltage,omitempty"`
-	InputVoltage   *float64  `json:"input_voltage,omitempty"`
-	OutputVoltage  *float64  `json:"output_voltage,omitempty"`
-	Load           *int      `json:"load,omitempty"`
-	Model          string    `json:"model,omitempty"`
-	Type           string    `json:"type,omitempty"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Message        string    `json:"message,omitempty"`
+	Available       bool      `json:"available"`
+	Name            string    `json:"name"`
+	State           string    `json:"state"` // online | on_battery | low_battery | unknown | unavailable
+	RawStatus       string    `json:"raw_status,omitempty"`
+	OnBattery       bool      `json:"on_battery"`
+	LowBattery      bool      `json:"low_battery"`
+	BatteryCharge   *int      `json:"battery_charge,omitempty"`
+	BatteryVoltage  *float64  `json:"battery_voltage,omitempty"`
+	InputVoltage    *float64  `json:"input_voltage,omitempty"`
+	OutputVoltage   *float64  `json:"output_voltage,omitempty"`
+	Load            *int      `json:"load,omitempty"`
+	Model           string    `json:"model,omitempty"`
+	Type            string    `json:"type,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	Message         string    `json:"message,omitempty"`
+	EmergencyActive bool      `json:"emergency_active"` // true, sobald der Server auf USV-Akku laeuft
+	Notice          string    `json:"notice,omitempty"` // fester deutscher Warntext fuer die App
 }
 
 // upsName / upsAddr resolve the UPS identity from the environment, defaulting to
@@ -152,6 +154,16 @@ func buildUPSInfo(name string, v map[string]string) *UPSInfo {
 		info.State = "online"
 	default:
 		info.State = "unknown"
+	}
+
+	// Notfall-Signal fuer die App: sobald der Server auf Akku laeuft, ist der
+	// Notfall aktiv; bei niedrigem Akku faehrt er automatisch sicher herunter.
+	info.EmergencyActive = info.OnBattery || info.LowBattery
+	switch info.State {
+	case "low_battery":
+		info.Notice = "Server fährt herunter."
+	case "on_battery":
+		info.Notice = "Notfallstrom — Server kann jeden Moment herunterfahren. Nichts mehr am Server machen."
 	}
 
 	if n, err := strconv.Atoi(strings.TrimSpace(v["battery.charge"])); err == nil {
