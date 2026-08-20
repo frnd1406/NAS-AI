@@ -1,13 +1,12 @@
 package files_repo
 
 import (
-		"github.com/nas-ai/api/src/domain/files"
-"context"
+	"context"
 	"database/sql"
 	"fmt"
 
 	"github.com/jmoiron/sqlx"
-
+	"github.com/nas-ai/api/src/domain/files"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,6 +20,34 @@ func NewFileRepository(db *sqlx.DB, logger *logrus.Logger) *FileRepository {
 		db:     db,
 		logger: logger,
 	}
+}
+
+// EnsureTable creates the files metadata table when missing (idempotent).
+func (r *FileRepository) EnsureTable(ctx context.Context) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS files (
+		id TEXT PRIMARY KEY,
+		owner_id TEXT NOT NULL,
+		filename TEXT NOT NULL,
+		mime_type TEXT NOT NULL DEFAULT '',
+		storage_path TEXT NOT NULL,
+		size_bytes BIGINT NOT NULL DEFAULT 0,
+		checksum TEXT,
+		encryption_status TEXT NOT NULL DEFAULT 'NONE',
+		encryption_metadata JSONB,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+		deleted_at TIMESTAMPTZ
+	);
+	CREATE INDEX IF NOT EXISTS idx_files_owner_id ON files(owner_id);
+	CREATE INDEX IF NOT EXISTS idx_files_storage_path ON files(storage_path);
+	CREATE INDEX IF NOT EXISTS idx_files_deleted_at ON files(deleted_at);
+	`
+	_, err := r.db.ExecContext(ctx, schema)
+	if err != nil {
+		return fmt.Errorf("ensure files table: %w", err)
+	}
+	return nil
 }
 
 // Save creates or updates a file record

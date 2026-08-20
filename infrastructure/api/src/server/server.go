@@ -171,6 +171,9 @@ func (s *Server) initRepositories() error {
 	}
 
 	s.fileRepo = files_repo.NewFileRepository(s.dbx, s.logger)
+	if err = s.fileRepo.EnsureTable(context.Background()); err != nil {
+		return fmt.Errorf("files table init failed: %w", err)
+	}
 
 	s.webauthnCredRepo = auth_repo.NewWebAuthnCredentialRepository(s.dbx, s.logger)
 	if err = s.webauthnCredRepo.EnsureTable(context.Background()); err != nil {

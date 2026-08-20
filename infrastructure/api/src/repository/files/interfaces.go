@@ -9,6 +9,7 @@ import (
 
 // FileRepositoryInterface defines methods for file metadata operations
 type FileRepositoryInterface interface {
+	EnsureTable(ctx context.Context) error
 	Save(ctx context.Context, file *files.File) error
 	GetByID(ctx context.Context, id string) (*files.File, error)
 	DeleteSoft(ctx context.Context, id string) error

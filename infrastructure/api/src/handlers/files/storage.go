@@ -322,6 +322,28 @@ func StorageDownloadHandler(storage content.StorageService, honeySvc content.Hon
 		}
 		defer file.Close()
 
+		// Gallery thumbs: ?thumb=1&max=256 — avoid shipping multi-MB originals.
+		if c.Query("thumb") == "1" || strings.EqualFold(c.Query("thumb"), "true") {
+			maxPx := parseThumbMax(c.Query("max"))
+			thumb, thumbType, ok, terr := buildImageThumbnail(file, maxPx)
+			if terr != nil {
+				logger.WithError(terr).WithField("path", path).Warn("storage: thumbnail encode failed")
+			}
+			if ok {
+				c.Header("Cache-Control", "private, max-age=86400")
+				c.Data(http.StatusOK, thumbType, thumb)
+				return
+			}
+			// Undecodable (e.g. HEIC/video) — reopen and serve original.
+			_ = file.Close()
+			file, info, ctype, err = storage.Open(path)
+			if err != nil {
+				handleStorageError(c, err, logger, requestID)
+				return
+			}
+			defer file.Close()
+		}
+
 		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", info.Name()))
 		c.DataFromReader(http.StatusOK, info.Size(), ctype, file, nil)
 	}
