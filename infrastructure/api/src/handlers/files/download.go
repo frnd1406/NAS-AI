@@ -61,6 +61,11 @@ func SmartDownloadHandler(
 ) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage = scoped.(*content.StorageManager)
 		path := c.Query("path")
 
 		if path == "" {
