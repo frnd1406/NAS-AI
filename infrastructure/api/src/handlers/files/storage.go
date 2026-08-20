@@ -3,6 +3,7 @@ package files
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -290,20 +291,107 @@ func StorageDeleteHandler(storage content.StorageService, aiService intelligence
 			return
 		}
 
-		// Notify AI agent to delete embeddings (prevents ghost knowledge)
-		// SYNCHRONOUS call - waits for AI agent response before returning 200
-		// Soft-fail: log error but don't block user if AI agent is down
-		if err := aiService.NotifyDelete(c.Request.Context(), fullPath, fileID); err != nil {
-			logger.WithFields(logrus.Fields{
-				"request_id": requestID,
-				"file_path":  fullPath,
-				"file_id":    fileID,
-				"error":      err.Error(),
-			}).Error("SOFT-FAIL: AI agent deletion failed, ghost knowledge may persist")
-			// Continue - don't block user, file is deleted from disk
+		// AI notify async — sync wait was ~7s and caused double-tap 404s on the client.
+		if aiService != nil {
+			go func(fullPath, fileID string) {
+				if err := aiService.NotifyDelete(context.Background(), fullPath, fileID); err != nil {
+					logger.WithFields(logrus.Fields{
+						"request_id": requestID,
+						"file_path":  fullPath,
+						"file_id":    fileID,
+						"error":      err.Error(),
+					}).Error("SOFT-FAIL: AI agent deletion failed, ghost knowledge may persist")
+				}
+			}(fullPath, fileID)
 		}
 
 		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+	}
+}
+
+// Max paths accepted per delete-batch request (clients should chunk larger selections).
+const maxBatchDeletePaths = 100
+
+type batchDeleteRequest struct {
+	Paths []string `json:"paths" binding:"required"`
+}
+
+type batchDeleteFailure struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
+// StorageDeleteBatchHandler soft-deletes many paths in one request.
+// AI embedding cleanup runs asynchronously so the client is not blocked ~7s per file.
+func StorageDeleteBatchHandler(storage content.StorageService, aiService intelligence.AIAgentServiceInterface, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+
+		var req batchDeleteRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: paths array required"})
+			return
+		}
+		if len(req.Paths) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no files selected"})
+			return
+		}
+		if len(req.Paths) > maxBatchDeletePaths {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("too many paths (max %d per request)", maxBatchDeletePaths),
+			})
+			return
+		}
+
+		deleted := make([]string, 0, len(req.Paths))
+		failures := make([]batchDeleteFailure, 0)
+
+		for _, raw := range req.Paths {
+			path := strings.TrimSpace(raw)
+			if path == "" || strings.Contains(path, "\x00") || strings.Contains(path, "..") {
+				failures = append(failures, batchDeleteFailure{Path: raw, Error: "invalid path"})
+				continue
+			}
+			if err := storage.Delete(path); err != nil {
+				failures = append(failures, batchDeleteFailure{Path: path, Error: err.Error()})
+				logger.WithFields(logrus.Fields{
+					"request_id": requestID,
+					"path":       path,
+					"error":      err.Error(),
+				}).Warn("storage: batch delete item failed")
+				continue
+			}
+			deleted = append(deleted, path)
+		}
+
+		if aiService != nil && len(deleted) > 0 {
+			pathsCopy := append([]string(nil), deleted...)
+			go func() {
+				for _, path := range pathsCopy {
+					fileID := filepath.Base(path)
+					fullPath := filepath.Join("/mnt/data", path)
+					if err := aiService.NotifyDelete(context.Background(), fullPath, fileID); err != nil {
+						logger.WithFields(logrus.Fields{
+							"path":  path,
+							"error": err.Error(),
+						}).Warn("SOFT-FAIL: AI agent batch deletion notify")
+					}
+				}
+			}()
+		}
+
+		logger.WithFields(logrus.Fields{
+			"request_id": requestID,
+			"deleted":    len(deleted),
+			"failed":     len(failures),
+		}).Info("storage: batch delete completed")
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"deleted": len(deleted),
+			"failed":  len(failures),
+			"errors":  failures,
+		})
 	}
 }
 
