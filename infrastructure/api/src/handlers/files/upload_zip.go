@@ -16,12 +16,18 @@ import (
 // StorageUploadZipHandler handles the upload and extraction of ZIP files
 func StorageUploadZipHandler(storageService *content.StorageManager, archiveService *content.ArchiveService, logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		scoped, ok := scopedStorage(c, storageService)
+		if !ok {
+			return
+		}
+		storageService = scoped.(*content.StorageManager)
+
 		// Initialize logger with context
 		requestID := c.GetString("RequestId")
 		log := logger.WithFields(logrus.Fields{
 			"component":  "ZipUpload",
 			"request_id": requestID,
-			"user_id":    c.GetString("UserID"),
+			"user_id":    c.GetString("user_id"),
 		})
 
 		// Get target path from query
