@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -68,6 +69,12 @@ type Config struct {
 	// Roots under which operator-configurable storage paths must live
 	// (backup destination, storage path, path validation).
 	AllowedStorageRoots []string
+
+	// FilesStorageRoot is the plain (unencrypted) files mount, e.g. /mnt/data.
+	FilesStorageRoot string
+	// VaultStorageRoot is the encrypted vault mount, e.g. /media/frnd14.
+	// Must not overlap FilesStorageRoot.
+	VaultStorageRoot string
 
 	// Environment
 	Environment string
@@ -191,6 +198,12 @@ func LoadConfigFromEnv() (*Config, error) {
 	// Allowed roots for operator-configurable storage paths
 	cfg.AllowedStorageRoots = parseStorageRoots(getEnv("ALLOWED_STORAGE_ROOTS", DefaultAllowedStorageRoots))
 
+	cfg.FilesStorageRoot = strings.TrimSpace(getEnv("FILES_STORAGE_ROOT", DefaultFilesStorageRoot))
+	cfg.VaultStorageRoot = strings.TrimSpace(getEnv("VAULT_STORAGE_ROOT", DefaultVaultStorageRoot))
+	if err := validateStorageRoots(cfg.FilesStorageRoot, cfg.VaultStorageRoot, cfg.AllowedStorageRoots); err != nil {
+		return nil, err
+	}
+
 	// WebAuthn / FIDO2 (YubiKey second factor)
 	cfg.WebAuthnRPID, cfg.WebAuthnRPDisplayName, cfg.WebAuthnRPOrigins = resolveWebAuthnConfig(
 		getEnv("WEBAUTHN_RP_ID", ""),
@@ -260,6 +273,12 @@ func getEnvBool(key string, fallback bool) bool {
 // paths may live. /media is included so external drives stay usable.
 const DefaultAllowedStorageRoots = "/mnt,/media"
 
+// DefaultFilesStorageRoot is the plain files volume inside the API container.
+const DefaultFilesStorageRoot = "/mnt/data"
+
+// DefaultVaultStorageRoot is the encrypted vault volume inside the API container.
+const DefaultVaultStorageRoot = "/media/frnd14"
+
 // parseStorageRoots splits and normalizes a comma-separated root list.
 func parseStorageRoots(raw string) []string {
 	var roots []string
@@ -269,6 +288,71 @@ func parseStorageRoots(raw string) []string {
 		}
 	}
 	return roots
+}
+
+// validateStorageRoots ensures files/vault roots are allowed and do not overlap.
+func validateStorageRoots(filesRoot, vaultRoot string, allowed []string) error {
+	if filesRoot == "" || vaultRoot == "" {
+		return fmt.Errorf("CRITICAL: FILES_STORAGE_ROOT and VAULT_STORAGE_ROOT must be set")
+	}
+	if err := pathsafeWithinAny(allowed, filesRoot); err != nil {
+		return fmt.Errorf("CRITICAL: FILES_STORAGE_ROOT invalid: %w", err)
+	}
+	if err := pathsafeWithinAny(allowed, vaultRoot); err != nil {
+		return fmt.Errorf("CRITICAL: VAULT_STORAGE_ROOT invalid: %w", err)
+	}
+	if storageRootsOverlap(filesRoot, vaultRoot) {
+		return fmt.Errorf("CRITICAL: FILES_STORAGE_ROOT and VAULT_STORAGE_ROOT must not overlap (%s vs %s)", filesRoot, vaultRoot)
+	}
+	return nil
+}
+
+func pathsafeWithinAny(roots []string, path string) error {
+	// Local duplicate of pathsafe.WithinAnyRoot to avoid config→pathsafe import cycles
+	// if pathsafe ever imports config. Kept intentionally small.
+	absPath := filepathCleanAbs(path)
+	if absPath == "" {
+		return fmt.Errorf("empty path")
+	}
+	if len(roots) == 0 {
+		return fmt.Errorf("no allowed storage roots configured")
+	}
+	for _, root := range roots {
+		root = strings.TrimSpace(root)
+		if root == "" {
+			continue
+		}
+		absRoot := filepathCleanAbs(root)
+		if absRoot == "" {
+			continue
+		}
+		if absPath == absRoot || strings.HasPrefix(absPath, absRoot+string(os.PathSeparator)) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s is outside allowed roots %v", path, roots)
+}
+
+func storageRootsOverlap(a, b string) bool {
+	aa := filepathCleanAbs(a)
+	bb := filepathCleanAbs(b)
+	if aa == "" || bb == "" {
+		return true
+	}
+	if aa == bb {
+		return true
+	}
+	sep := string(os.PathSeparator)
+	return strings.HasPrefix(aa+sep, bb+sep) || strings.HasPrefix(bb+sep, aa+sep)
+}
+
+func filepathCleanAbs(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	// Lexical clean is enough at config load (mount may not exist yet in CI).
+	return filepath.Clean(p)
 }
 
 // resolveWebAuthnConfig derives the effective WebAuthn relying-party settings.
