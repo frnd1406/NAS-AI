@@ -27,21 +27,32 @@ type limiterEntry struct {
 	lastAccessUnix int64 // Use atomic operations for thread-safe updates
 }
 
-// NewRateLimiter creates a new rate limiter with TTL-based cleanup
+// NewRateLimiter creates a new rate limiter with TTL-based cleanup.
+// Burst equals the per-minute budget (legacy behaviour).
 func NewRateLimiter(cfg *config.Config) *RateLimiter {
-	// Convert requests/min to requests/second
-	r := rate.Limit(float64(cfg.RateLimitPerMin) / 60.0)
+	return NewRateLimiterWithBurst(cfg.RateLimitPerMin, cfg.RateLimitPerMin)
+}
+
+// NewRateLimiterWithBurst creates a limiter with an explicit burst size.
+// perMin is the sustained refill rate (tokens per minute); burst is the
+// maximum tokens that can be consumed in a short spike.
+func NewRateLimiterWithBurst(perMin, burst int) *RateLimiter {
+	if perMin < 1 {
+		perMin = 1
+	}
+	if burst < 1 {
+		burst = 1
+	}
+	r := rate.Limit(float64(perMin) / 60.0)
 
 	rl := &RateLimiter{
 		limiters: make(map[string]*limiterEntry),
 		rate:     r,
-		burst:    cfg.RateLimitPerMin, // Allow burst up to limit
-		ttl:      10 * time.Minute,    // TTL for inactive IPs
+		burst:    burst,
+		ttl:      10 * time.Minute,
 	}
 
-	// Start background cleanup goroutine
 	go rl.cleanupLoop()
-
 	return rl
 }
 
@@ -120,12 +131,12 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 		limiter := rl.getLimiter(ip)
 
 		if !limiter.Allow() {
-			// Rate limit exceeded
+			c.Header("Retry-After", "30")
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
 					"code":        "rate_limit_exceeded",
 					"message":     "Too many requests. Please try again later.",
-					"retry_after": time.Second * 60, // Suggest retry after 1 minute
+					"retry_after": 30,
 				},
 			})
 			c.Abort()
