@@ -312,3 +312,35 @@ func (r *UserRepository) UpdateRole(ctx context.Context, userID, role string) er
 	}).Info("User role updated successfully")
 	return nil
 }
+
+// DeleteUser permanently removes a user row.
+func (r *UserRepository) DeleteUser(ctx context.Context, userID string) error {
+	query := `DELETE FROM users WHERE id = $1`
+
+	result, err := r.db.ExecContext(ctx, query, userID)
+	if err != nil {
+		r.logger.WithError(err).Error("Failed to delete user")
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("user not found")
+	}
+
+	r.logger.WithField("user_id", userID).Warn("User deleted successfully")
+	return nil
+}
+
+// CountAdmins returns how many admin accounts exist.
+func (r *UserRepository) CountAdmins(ctx context.Context) (int, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count admins: %w", err)
+	}
+	return n, nil
+}

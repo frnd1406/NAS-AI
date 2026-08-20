@@ -228,6 +228,17 @@ func UpdateUserRoleHandler(userRepo *auth_repo.UserRepository, logger *logrus.Lo
 		}
 
 		ctx := c.Request.Context()
+		user, err := userRepo.FindByID(ctx, userID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		if user.IsAdmin() && req.Role == "user" {
+			if n, err := userRepo.CountAdmins(ctx); err == nil && n <= 1 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin"})
+				return
+			}
+		}
 		if err := userRepo.UpdateRole(ctx, userID, req.Role); err != nil {
 			logger.WithError(err).Error("Failed to update user role")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
@@ -336,12 +347,195 @@ func CreateUserAdminHandler(
 
 		c.JSON(http.StatusCreated, gin.H{
 			"user": gin.H{
-				"id":       user.ID,
-				"username": user.Username,
-				"email":    user.Email,
-				"role":     string(user.Role),
+				"id":             user.ID,
+				"username":       user.Username,
+				"email":          user.Email,
+				"role":           string(user.Role),
+				"email_verified": user.EmailVerified,
 			},
 		})
+	}
+}
+
+// UpdateUserAdminRequest patches profile fields for an existing user.
+type UpdateUserAdminRequest struct {
+	Username *string `json:"username"`
+	Email    *string `json:"email"`
+	Role     *string `json:"role"`
+}
+
+// UpdateUserAdminHandler updates username/email/role for a user.
+func UpdateUserAdminHandler(userRepo *auth_repo.UserRepository, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.Param("id")
+		var req UpdateUserAdminRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+			return
+		}
+		ctx := c.Request.Context()
+		user, err := userRepo.FindByID(ctx, userID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+
+		if req.Username != nil {
+			name := strings.TrimSpace(*req.Username)
+			if len(name) < 3 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "username must be at least 3 characters"})
+				return
+			}
+			if existing, err := userRepo.FindByUsername(ctx, name); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+				return
+			} else if existing != nil && existing.ID != userID {
+				c.JSON(http.StatusConflict, gin.H{"error": "username already registered"})
+				return
+			}
+			user.Username = name
+		}
+		if req.Email != nil {
+			email := strings.TrimSpace(strings.ToLower(*req.Email))
+			if email == "" || !strings.Contains(email, "@") {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email"})
+				return
+			}
+			if existing, err := userRepo.FindByEmail(ctx, email); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+				return
+			} else if existing != nil && existing.ID != userID {
+				c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+				return
+			}
+			user.Email = email
+		}
+		if err := userRepo.UpdateUser(ctx, user); err != nil {
+			logger.WithError(err).Error("admin update user failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user"})
+			return
+		}
+
+		if req.Role != nil {
+			role := strings.TrimSpace(*req.Role)
+			if role != "user" && role != "admin" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
+				return
+			}
+			if string(user.Role) == "admin" && role == "user" {
+				if n, err := userRepo.CountAdmins(ctx); err == nil && n <= 1 {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin"})
+					return
+				}
+			}
+			if err := userRepo.UpdateRole(ctx, userID, role); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
+				return
+			}
+			user.Role = auth.UserRole(role)
+		}
+
+		logger.WithFields(logrus.Fields{
+			"user_id":    userID,
+			"changed_by": c.GetString("user_id"),
+		}).Info("Admin updated user profile")
+
+		c.JSON(http.StatusOK, gin.H{"user": user.ToResponse()})
+	}
+}
+
+// DeleteUserAdminHandler removes a user. Blocks deleting yourself or the last admin.
+func DeleteUserAdminHandler(userRepo *auth_repo.UserRepository, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.Param("id")
+		actorID := c.GetString("user_id")
+		if userID == actorID {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete your own account"})
+			return
+		}
+		ctx := c.Request.Context()
+		user, err := userRepo.FindByID(ctx, userID)
+		if err != nil || user == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		if user.IsAdmin() {
+			if n, err := userRepo.CountAdmins(ctx); err == nil && n <= 1 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete the last admin"})
+				return
+			}
+		}
+		if err := userRepo.DeleteUser(ctx, userID); err != nil {
+			logger.WithError(err).Error("admin delete user failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user"})
+			return
+		}
+		logger.WithFields(logrus.Fields{
+			"user_id":    userID,
+			"deleted_by": actorID,
+		}).Warn("Admin deleted user")
+		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+	}
+}
+
+// VerifyUserEmailAdminHandler marks a user's email as verified.
+func VerifyUserEmailAdminHandler(userRepo *auth_repo.UserRepository, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.Param("id")
+		ctx := c.Request.Context()
+		if err := userRepo.VerifyEmail(ctx, userID); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		logger.WithFields(logrus.Fields{
+			"user_id":    userID,
+			"verified_by": c.GetString("user_id"),
+		}).Info("Admin verified user email")
+		c.JSON(http.StatusOK, gin.H{"status": "verified"})
+	}
+}
+
+// ResetUserPasswordAdminRequest sets a new password for a user.
+type ResetUserPasswordAdminRequest struct {
+	Password string `json:"password" binding:"required"`
+}
+
+// ResetUserPasswordAdminHandler sets a new password (admin-only).
+func ResetUserPasswordAdminHandler(
+	userRepo *auth_repo.UserRepository,
+	passwordService *security.PasswordService,
+	logger *logrus.Logger,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.Param("id")
+		var req ResetUserPasswordAdminRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+			return
+		}
+		if err := passwordService.ValidatePasswordStrength(req.Password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		ctx := c.Request.Context()
+		if user, err := userRepo.FindByID(ctx, userID); err != nil || user == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			return
+		}
+		hash, err := passwordService.HashPassword(req.Password)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset password"})
+			return
+		}
+		if err := userRepo.UpdatePassword(ctx, userID, hash); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset password"})
+			return
+		}
+		logger.WithFields(logrus.Fields{
+			"user_id":    userID,
+			"reset_by":   c.GetString("user_id"),
+		}).Warn("Admin reset user password")
+		c.JSON(http.StatusOK, gin.H{"status": "password_updated"})
 	}
 }
 
