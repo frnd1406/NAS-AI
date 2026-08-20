@@ -62,11 +62,13 @@ func main() {
 
 	// Log startup
 	logger.WithFields(logrus.Fields{
-		"port":         cfg.Port,
-		"environment":  cfg.Environment,
-		"log_level":    cfg.LogLevel,
-		"cors_origins": cfg.CORSOrigins,
-		"rate_limit":   cfg.RateLimitPerMin,
+		"port":               cfg.Port,
+		"environment":        cfg.Environment,
+		"log_level":          cfg.LogLevel,
+		"cors_origins":       cfg.CORSOrigins,
+		"rate_limit":         cfg.RateLimitPerMin,
+		"files_storage_root": cfg.FilesStorageRoot,
+		"vault_storage_root": cfg.VaultStorageRoot,
 	}).Info("Starting NAS.AI API server")
 
 	// 3. Create server (all initialization happens inside)
