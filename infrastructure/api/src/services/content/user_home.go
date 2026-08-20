@@ -34,7 +34,8 @@ func (s *StorageManager) ForUser(userID string) (*StorageManager, error) {
 	return &clone, nil
 }
 
-// EnsureUserHome creates the private home tree (idempotent).
+// EnsureUserHome creates the private home tree (idempotent), including the
+// canonical media library path used by iOS Photo Sync.
 func (s *StorageManager) EnsureUserHome(userID string) error {
 	scoped, err := s.ForUser(userID)
 	if err != nil {
@@ -43,23 +44,70 @@ func (s *StorageManager) EnsureUserHome(userID string) error {
 	ctx := context.Background()
 	for _, rel := range []string{
 		scoped.homePrefix,
-		filepath.ToSlash(filepath.Join(scoped.homePrefix, "Fotos")),
-		filepath.ToSlash(filepath.Join(scoped.homePrefix, "Fotos", "iPhone")),
+		filepath.ToSlash(filepath.Join(scoped.homePrefix, MediaLibraryFolder)),
+		filepath.ToSlash(filepath.Join(scoped.homePrefix, MediaLibraryRel)),
 		scoped.trashPath,
 	} {
 		if err := s.store.Mkdir(ctx, rel); err != nil {
 			return fmt.Errorf("ensure home %s: %w", rel, err)
 		}
 	}
+	if err := s.migrateLegacyMediaIfNeeded(userID); err != nil && s.logger != nil {
+		s.logger.WithError(err).WithField("user_id", userID).Warn("legacy media migrate skipped")
+	}
 	return nil
 }
+
+// migrateLegacyMediaIfNeeded moves pre-homes Fotos/iPhone into this user's library
+// when the user library is empty and a legacy shared folder still exists.
+func (s *StorageManager) migrateLegacyMediaIfNeeded(userID string) error {
+	legacyRel := MediaLibraryRel
+	userRel := filepath.ToSlash(filepath.Join(UserHomeRel(userID), MediaLibraryRel))
+
+	legacyFull, err := s.store.GetFullPath(legacyRel)
+	if err != nil {
+		return nil
+	}
+	userFull, err := s.store.GetFullPath(userRel)
+	if err != nil {
+		return err
+	}
+
+	legacyInfo, err := os.Stat(legacyFull)
+	if err != nil || !legacyInfo.IsDir() {
+		return nil
+	}
+	// Only migrate if user media dir is empty.
+	entries, err := os.ReadDir(userFull)
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		return nil
+	}
+	legacyEntries, err := os.ReadDir(legacyFull)
+	if err != nil || len(legacyEntries) == 0 {
+		return nil
+	}
+
+	// Move legacy files into the user library (one-time).
+	for _, e := range legacyEntries {
+		src := filepath.Join(legacyFull, e.Name())
+		dst := filepath.Join(userFull, e.Name())
+		if err := os.Rename(src, dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 
 // mapIn translates a client-relative path into the on-disk path under the user home.
 func (s *StorageManager) mapIn(rel string) (string, error) {
 	if s.homePrefix == "" {
 		return rel, nil
 	}
-	clean := strings.Trim(filepath.ToSlash(rel), "/")
+	clean := NormalizeClientRelPath(filepath.ToSlash(rel))
 	if clean == "." {
 		clean = ""
 	}
