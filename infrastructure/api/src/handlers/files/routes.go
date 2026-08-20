@@ -92,6 +92,7 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 	)
 	{
 		storage.GET("/files", StorageListHandler(h.storageService, h.logger))
+		storage.GET("/media-library", StorageMediaLibraryHandler(h.storageService, h.logger))
 		storage.POST("/upload", StorageUploadHandler(h.storageService, h.encryptionPolicyService, h.honeyfileService, h.aiAgentService, h.logger))
 		storage.GET("/download", StorageDownloadHandler(h.storageService, h.honeyfileService, h.logger))
 		storage.GET("/smart-download", SmartDownloadHandler(h.storageService, h.honeyfileService, h.contentDeliveryService, h.logger))

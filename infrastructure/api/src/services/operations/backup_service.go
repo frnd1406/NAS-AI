@@ -152,12 +152,22 @@ func (s *BackupService) CreateBackup() (BackupInfo, error) {
 			return nil
 		}
 
+		// Keep archives focused on user homes + shared trees; skip trash/system noise.
+		slashRel := filepath.ToSlash(rel)
+		base := filepath.Base(slashRel)
+		if base == ".trash" || base == ".system" {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		header, err := tar.FileInfoHeader(info, "")
 		if err != nil {
 			return err
 		}
 		// Normalize to forward slashes for tar
-		header.Name = filepath.ToSlash(rel)
+		header.Name = slashRel
 
 		if err := tw.WriteHeader(header); err != nil {
 			return err
