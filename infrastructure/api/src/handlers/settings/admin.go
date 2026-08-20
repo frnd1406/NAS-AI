@@ -14,6 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/nas-ai/api/src/config"
 	"github.com/nas-ai/api/src/database"
+	"github.com/nas-ai/api/src/domain/auth"
+	"github.com/nas-ai/api/src/services/security"
 
 	"github.com/sirupsen/logrus"
 )
@@ -239,6 +241,107 @@ func UpdateUserRoleHandler(userRepo *auth_repo.UserRepository, logger *logrus.Lo
 		}).Warn("User role changed")
 
 		c.JSON(http.StatusOK, gin.H{"message": "Role updated successfully"})
+	}
+}
+
+// CreateUserAdminRequest is used by admins to provision accounts (no invite code, no auto-login).
+type CreateUserAdminRequest struct {
+	Username string `json:"username" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
+	Role     string `json:"role"` // optional: user (default) or admin
+}
+
+// CreateUserAdminHandler creates a user profile without switching the admin session.
+func CreateUserAdminHandler(
+	userRepo *auth_repo.UserRepository,
+	passwordService *security.PasswordService,
+	logger *logrus.Logger,
+) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		var req CreateUserAdminRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+			return
+		}
+
+		req.Username = strings.TrimSpace(req.Username)
+		req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+		if len(req.Username) < 3 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "username must be at least 3 characters"})
+			return
+		}
+		role := strings.TrimSpace(req.Role)
+		if role == "" {
+			role = "user"
+		}
+		if role != "user" && role != "admin" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role, must be 'user' or 'admin'"})
+			return
+		}
+		if err := passwordService.ValidatePasswordStrength(req.Password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		ctx := c.Request.Context()
+		if existing, err := userRepo.FindByUsername(ctx, req.Username); err != nil {
+			logger.WithError(err).Error("admin create user: username check failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			return
+		} else if existing != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "username already registered"})
+			return
+		}
+		if existing, err := userRepo.FindByEmail(ctx, req.Email); err != nil {
+			logger.WithError(err).Error("admin create user: email check failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			return
+		} else if existing != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
+			return
+		}
+
+		hash, err := passwordService.HashPassword(req.Password)
+		if err != nil {
+			logger.WithError(err).Error("admin create user: hash failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			return
+		}
+
+		user, err := userRepo.CreateUser(ctx, req.Username, req.Email, hash)
+		if err != nil {
+			logger.WithError(err).Error("admin create user: insert failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
+			return
+		}
+
+		if role != string(user.Role) {
+			if err := userRepo.UpdateRole(ctx, user.ID, role); err != nil {
+				logger.WithError(err).Error("admin create user: role update failed")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "user created but role update failed"})
+				return
+			}
+			user.Role = auth.UserRole(role)
+		}
+
+		logger.WithFields(logrus.Fields{
+			"request_id": requestID,
+			"user_id":    user.ID,
+			"email":      user.Email,
+			"role":       string(user.Role),
+			"created_by": c.GetString("user_id"),
+		}).Info("Admin created user profile")
+
+		c.JSON(http.StatusCreated, gin.H{
+			"user": gin.H{
+				"id":       user.ID,
+				"username": user.Username,
+				"email":    user.Email,
+				"role":     string(user.Role),
+			},
+		})
 	}
 }
 
