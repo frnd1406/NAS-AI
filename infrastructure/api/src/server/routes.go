@@ -103,6 +103,7 @@ func (s *Server) setupAdminRoutes() {
 		adminV1.PUT("/settings", settings.UpdateAdminSettingsHandler(s.cfg, s.settingsRepo, s.logger))
 		adminV1.GET("/status", settings.SystemStatusHandler(s.db, s.logger))
 		adminV1.GET("/users", settings.UserListHandler(s.userRepo, s.logger))
+		adminV1.POST("/users", settings.CreateUserAdminHandler(s.userRepo, s.passwordService, s.logger))
 		adminV1.PUT("/users/:id/role", settings.UpdateUserRoleHandler(s.userRepo, s.logger))
 		adminV1.POST("/maintenance", settings.ToggleMaintenanceModeHandler(s.logger))
 		adminV1.GET("/audit-logs", settings.AuditLogHandler(s.db, s.logger))
