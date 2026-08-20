@@ -31,11 +31,12 @@ var (
 
 // StorageManager orchestrates file storage, encryption, and metadata.
 type StorageManager struct {
-	store     storage.StorageProvider
-	crypto    *security.EncryptionService
-	fileRepo  *files_repo.FileRepository
-	logger    *logrus.Logger
-	trashPath string // Relative to store root, e.g. ".trash"
+	store      storage.StorageProvider
+	crypto     *security.EncryptionService
+	fileRepo   *files_repo.FileRepository
+	logger     *logrus.Logger
+	trashPath  string // Relative to store root, e.g. "homes/{uid}/.trash"
+	homePrefix string // When set, all client paths are scoped under this prefix
 }
 
 // SaveResult contains metadata about the saved file
@@ -99,6 +100,11 @@ func (s *StorageManager) SaveWithEncryption(
 		destFilename += ".enc"
 	}
 	destRelPath := filepath.Join(dir, destFilename)
+	mappedDir, err := s.mapIn(dir)
+	if err != nil {
+		return nil, err
+	}
+	destRelPath = filepath.ToSlash(filepath.Join(mappedDir, destFilename))
 
 	// 3. Versioning (Rotate existing)
 	s.rotateVersions(ctx, destRelPath, 3)
@@ -183,7 +189,7 @@ func (s *StorageManager) SaveWithEncryption(
 		FileID:           filepath.Base(filename), // Rough ID
 		SizeBytes:        written,
 		Checksum:         checksum,
-		StoragePath:      destRelPath,
+		StoragePath:      s.mapOut(destRelPath),
 		EncryptionStatus: mode,
 		EncryptionMeta:   encMeta,
 	}
@@ -299,37 +305,44 @@ type StorageEntry struct {
 }
 
 func (s *StorageManager) List(relPath string) ([]StorageEntry, error) {
-	providerItems, err := s.store.List(context.Background(), relPath)
+	if err := s.ensureHomeDir(); err != nil {
+		return nil, err
+	}
+	mapped, err := s.mapIn(relPath)
+	if err != nil {
+		return nil, err
+	}
+	providerItems, err := s.store.List(context.Background(), mapped)
 	if err != nil {
 		return nil, err
 	}
 
-	items := make([]StorageEntry, len(providerItems))
-	for i, item := range providerItems {
+	items := make([]StorageEntry, 0, len(providerItems))
+	for _, item := range providerItems {
+		// Hide internal trash dir from the home listing.
+		if item.Name == ".trash" {
+			continue
+		}
 		isImage := strings.HasPrefix(item.MimeType, "image/")
-		items[i] = StorageEntry{
+		items = append(items, StorageEntry{
 			Name:     item.Name,
 			Size:     item.Size,
 			IsDir:    item.IsDir,
 			ModTime:  item.ModTime,
 			MimeType: item.MimeType,
 			IsImage:  isImage,
-		}
+		})
 	}
 	return items, nil
 }
 
 func (s *StorageManager) Open(relPath string) (*os.File, os.FileInfo, string, error) {
-	// Legacy Open returned *os.File. LocalStore.ReadFile returns io.ReadCloser.
-	// We might need to cast or adapt.
-	// store.ReadFile calls os.Open under hood.
-	// But Open also need FileInfo and MimeType.
-	// store.ReadFile returns ReadCloser.
-	// We might need to expose ReadFileWithInfo in Store?
-	// Or just use GetFullPath + os.Open here solely for compatibility?
-	// Ideally we break this dependency on *os.File. but Handlers depend on it.
+	mapped, err := s.mapIn(relPath)
+	if err != nil {
+		return nil, nil, "", err
+	}
 
-	fullPath, err := s.store.GetFullPath(relPath)
+	fullPath, err := s.store.GetFullPath(mapped)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -353,29 +366,32 @@ func (s *StorageManager) Open(relPath string) (*os.File, os.FileInfo, string, er
 }
 
 func (s *StorageManager) Delete(relPath string) error {
-	// Move to trash
-	cleanRel := strings.TrimPrefix(filepath.Clean(relPath), "/")
+	mapped, err := s.mapIn(relPath)
+	if err != nil {
+		return err
+	}
+	withinHome := s.mapOut(mapped)
 	timestamp := time.Now().UTC().Format("20060102T150405Z")
-	trashRel := filepath.Join(s.trashPath, timestamp, cleanRel)
+	trashRel := filepath.ToSlash(filepath.Join(s.trashPath, timestamp, withinHome))
 
-	return s.store.Move(context.Background(), relPath, trashRel)
+	return s.store.Move(context.Background(), mapped, trashRel)
 }
 
 func (s *StorageManager) ListTrash() ([]TrashEntry, error) {
-	// This requires walking the trash dir which is structure differently?
-	// Old: walked trashPath. Logic: generic walk.
-	// LocalStore.List only lists one dir.
-	// We might need a Walk method in Store? Or use filepath.Walk on GetFullPath?
-	// GetFullPath is exposed.
-	fullTrashPath, _ := s.store.GetFullPath(s.trashPath)
+	fullTrashPath, err := s.store.GetFullPath(s.trashPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(fullTrashPath); os.IsNotExist(err) {
+		return []TrashEntry{}, nil
+	}
 	var entries []TrashEntry
-	filepath.Walk(fullTrashPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(fullTrashPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
 		}
 		rel, _ := filepath.Rel(fullTrashPath, path)
-		// ... parsing logic ...
-		parts := strings.SplitN(rel, string(os.PathSeparator), 2)
+		parts := strings.SplitN(filepath.ToSlash(rel), "/", 2)
 		original := ""
 		if len(parts) == 2 {
 			original = parts[1]
@@ -402,37 +418,62 @@ type TrashEntry struct {
 }
 
 func (s *StorageManager) RestoreFromTrash(id string) error {
-	// id is relative to trash root
-	srcRel := filepath.Join(s.trashPath, id)
+	srcRel := filepath.ToSlash(filepath.Join(s.trashPath, id))
 
-	parts := strings.SplitN(id, "/", 2)
+	parts := strings.SplitN(filepath.ToSlash(id), "/", 2)
 	if len(parts) != 2 {
 		return errors.New("invalid id")
 	}
-	originalRel := parts[1]
+	originalRel, err := s.mapIn(parts[1])
+	if err != nil {
+		return err
+	}
 
 	return s.store.Move(context.Background(), srcRel, originalRel)
 }
 
 func (s *StorageManager) DeleteFromTrash(id string) error {
-	targetRel := filepath.Join(s.trashPath, id)
+	targetRel := filepath.ToSlash(filepath.Join(s.trashPath, id))
 	return s.store.Delete(context.Background(), targetRel)
 }
 
 func (s *StorageManager) Rename(oldRel, newName string) error {
-	dir := filepath.Dir(oldRel)
-	newRel := filepath.Join(dir, newName)
-	return s.store.Move(context.Background(), oldRel, newRel)
+	mappedOld, err := s.mapIn(oldRel)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(mappedOld)
+	newRel := filepath.ToSlash(filepath.Join(dir, newName))
+	return s.store.Move(context.Background(), mappedOld, newRel)
 }
 
 func (s *StorageManager) Move(srcRel, dstRel string) error {
-	return s.store.Move(context.Background(), srcRel, dstRel)
+	mappedSrc, err := s.mapIn(srcRel)
+	if err != nil {
+		return err
+	}
+	mappedDst, err := s.mapIn(dstRel)
+	if err != nil {
+		return err
+	}
+	return s.store.Move(context.Background(), mappedSrc, mappedDst)
 }
 
 func (s *StorageManager) Mkdir(relPath string) error {
-	return s.store.Mkdir(context.Background(), relPath)
+	if err := s.ensureHomeDir(); err != nil {
+		return err
+	}
+	mapped, err := s.mapIn(relPath)
+	if err != nil {
+		return err
+	}
+	return s.store.Mkdir(context.Background(), mapped)
 }
 
 func (s *StorageManager) GetFullPath(relPath string) (string, error) {
-	return s.store.GetFullPath(relPath)
+	mapped, err := s.mapIn(relPath)
+	if err != nil {
+		return "", err
+	}
+	return s.store.GetFullPath(mapped)
 }
