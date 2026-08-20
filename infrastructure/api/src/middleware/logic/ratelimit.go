@@ -132,14 +132,13 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 
 		if !limiter.Allow() {
 			c.Header("Retry-After", "30")
-			c.JSON(http.StatusTooManyRequests, gin.H{
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
 					"code":        "rate_limit_exceeded",
 					"message":     "Too many requests. Please try again later.",
 					"retry_after": 30,
 				},
 			})
-			c.Abort()
 			return
 		}
 

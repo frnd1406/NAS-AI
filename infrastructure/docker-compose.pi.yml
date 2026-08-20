@@ -100,7 +100,8 @@ services:
       DEV_TLS_DIR: "/app/dev-certs"
       CORS_ORIGINS: "http://${LAN_HOST}:3001,http://${LAN_HOST}"
       FRONTEND_URL: "http://${LAN_HOST}:3001"
-      RATE_LIMIT_PER_MIN: "100"
+      # Photo sync + gallery can easily exceed 100/min on LAN; auth routes stay separately limited.
+      RATE_LIMIT_PER_MIN: "2000"
       # Persist plain files / vault on the RAID mounts (not WORKDIR /app).
       FILES_STORAGE_ROOT: "${FILES_STORAGE_ROOT:-/mnt/data}"
       VAULT_STORAGE_ROOT: "${VAULT_STORAGE_ROOT:-/media/frnd14}"
