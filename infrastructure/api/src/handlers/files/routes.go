@@ -98,6 +98,7 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 		storage.GET("/download-zip", StorageDownloadZipHandler(h.storageService, h.logger))
 		storage.POST("/batch-download", StorageBatchDownloadHandler(h.storageService, h.logger))
 		storage.DELETE("/delete", StorageDeleteHandler(h.storageService, h.aiAgentService, h.logger))
+		storage.POST("/delete-batch", StorageDeleteBatchHandler(h.storageService, h.aiAgentService, h.logger))
 		storage.GET("/trash", StorageTrashListHandler(h.storageService, h.logger))
 		storage.POST("/trash/restore/:id", StorageTrashRestoreHandler(h.storageService, h.logger))
 		storage.DELETE("/trash/:id", StorageTrashDeleteHandler(h.storageService, h.logger))
