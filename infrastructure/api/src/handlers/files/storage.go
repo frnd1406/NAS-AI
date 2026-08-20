@@ -63,6 +63,46 @@ type renameRequest struct {
 	NewName string `json:"newName" binding:"required"`
 }
 
+// reservedRootNames must never appear in the plain Files root listing and cannot
+// be created/renamed there. Vault content stays reachable only via path "vault/…"
+// from the dedicated Vault UI (or encrypted handlers).
+var reservedRootNames = map[string]struct{}{
+	"vault":   {},
+	".system": {},
+	".trash":  {},
+}
+
+func isReservedRootName(name string) bool {
+	_, ok := reservedRootNames[strings.TrimSpace(name)]
+	return ok
+}
+
+func isReservedRootCreate(path string) bool {
+	clean := strings.Trim(filepath.ToSlash(path), "/")
+	return isReservedRootName(clean)
+}
+
+func resolveStorageFullPath(storage content.StorageService, rel string) string {
+	if full, err := storage.GetFullPath(rel); err == nil && full != "" {
+		return full
+	}
+	return rel
+}
+
+func filterReservedRootListing(path string, items []content.StorageEntry) []content.StorageEntry {
+	if strings.Trim(filepath.ToSlash(path), "/") != "" {
+		return items
+	}
+	out := make([]content.StorageEntry, 0, len(items))
+	for _, item := range items {
+		if isReservedRootName(item.Name) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func StorageListHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetString("request_id")
@@ -75,7 +115,7 @@ func StorageListHandler(storage content.StorageService, logger *logrus.Logger) g
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"items": items,
+			"items": filterReservedRootListing(path, items),
 		})
 	}
 }
@@ -231,7 +271,7 @@ func StorageDownloadHandler(storage content.StorageService, honeySvc content.Hon
 		}
 
 		// SECURITY: Check for integrity checkpoint BEFORE serving
-		fullPath := filepath.Join("/mnt/data", path)
+		fullPath := resolveStorageFullPath(storage, path)
 
 		// Prepare metadata for audit/forensics
 		// SECURITY FIX: Extract UserID from context for audit logging
@@ -283,8 +323,7 @@ func StorageDeleteHandler(storage content.StorageService, aiService intelligence
 
 		// Extract fileID for AI agent notification (before deletion!)
 		fileID := filepath.Base(path)
-		// Construct full path for AI agent (assuming /mnt/data base path)
-		fullPath := filepath.Join("/mnt/data", path)
+		fullPath := resolveStorageFullPath(storage, path)
 
 		if err := storage.Delete(path); err != nil {
 			handleStorageError(c, err, logger, requestID)
@@ -369,7 +408,7 @@ func StorageDeleteBatchHandler(storage content.StorageService, aiService intelli
 			go func() {
 				for _, path := range pathsCopy {
 					fileID := filepath.Base(path)
-					fullPath := filepath.Join("/mnt/data", path)
+					fullPath := resolveStorageFullPath(storage, path)
 					if err := aiService.NotifyDelete(context.Background(), fullPath, fileID); err != nil {
 						logger.WithFields(logrus.Fields{
 							"path":  path,
@@ -482,6 +521,10 @@ func StorageRenameHandler(storage content.StorageService, logger *logrus.Logger)
 		var req renameRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+			return
+		}
+		if isReservedRootName(req.NewName) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "reserved name"})
 			return
 		}
 		if err := storage.Rename(req.OldPath, req.NewName); err != nil {
@@ -831,6 +874,10 @@ func StorageMkdirHandler(storage content.StorageService, logger *logrus.Logger) 
 
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+			return
+		}
+		if isReservedRootCreate(req.Path) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "reserved name"})
 			return
 		}
 
