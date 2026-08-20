@@ -13,9 +13,7 @@ import (
 )
 
 // FileContentHandler returns the raw content of a file for preview
-// GET /api/v1/files/content?path=/mnt/data/...
-// FileContentHandler returns the raw content of a file for preview
-// GET /api/v1/files/content?path=/mnt/data/...
+// GET /api/v1/files/content?path=… (absolute under files root, or relative)
 func FileContentHandler(storageService content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		filePath := c.Query("path")
@@ -24,13 +22,21 @@ func FileContentHandler(storageService content.StorageService, logger *logrus.Lo
 			return
 		}
 
-		// Use StorageService to open the file (handles path security logic internally if implemented,
-		// but checking prefix here is still good defensive practice if storageService assumes relative paths)
-		// Assuming storageService.Open takes relative path or handles it.
-		// Existing StorageService Open takes relative path usually.
-		// filePath from query might be absolute or relative.
-		// Logic: If /mnt/data is root, strip it.
-		relPath := strings.TrimPrefix(filePath, "/mnt/data/")
+		relPath := strings.TrimPrefix(filepath.ToSlash(filePath), "/")
+		if root, err := storageService.GetFullPath("."); err == nil {
+			absRoot := filepath.Clean(root)
+			// GetFullPath(".") may append "."; prefer parent when that happens.
+			if strings.HasSuffix(absRoot, string(filepath.Separator)+".") {
+				absRoot = filepath.Dir(absRoot)
+			}
+			absRootSlash := filepath.ToSlash(absRoot)
+			fpSlash := filepath.ToSlash(filePath)
+			if strings.HasPrefix(fpSlash, absRootSlash+"/") {
+				relPath = strings.TrimPrefix(fpSlash, absRootSlash+"/")
+			} else if fpSlash == absRootSlash {
+				relPath = ""
+			}
+		}
 		relPath = strings.TrimPrefix(relPath, "/")
 
 		// Open file via service

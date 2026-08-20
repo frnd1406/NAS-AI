@@ -219,7 +219,7 @@ func (s *Server) initServices() error {
 	s.recoveryCodeService = security.NewRecoveryCodeService(s.recoveryCodeRepo, s.passwordService, s.logger)
 
 	// Backup Service
-	s.backupService, err = operations.NewBackupService("/mnt/data", s.cfg.BackupStoragePath, s.cfg.AllowedStorageRoots, s.logger)
+	s.backupService, err = operations.NewBackupService(s.cfg.FilesStorageRoot, s.cfg.BackupStoragePath, s.cfg.AllowedStorageRoots, s.logger)
 	if err != nil {
 		return fmt.Errorf("backup service init failed: %w", err)
 	}
@@ -243,14 +243,14 @@ func (s *Server) initServices() error {
 	s.logger.WithField("vaultPath", vaultPath).Info("Encryption service initialized")
 
 	// Storage Services
-	localStore, err := storage.NewLocalStore("/mnt/data")
+	localStore, err := storage.NewLocalStore(s.cfg.FilesStorageRoot)
 	if err != nil {
 		return fmt.Errorf("local store init failed: %w", err)
 	}
 	s.storageService = content.NewStorageManager(localStore, s.encryptionService, s.fileRepo, s.logger)
 
-	// Encrypted Storage (optional)
-	encryptedStoragePath := "/media/user/DEMO"
+	// Encrypted Storage (optional) — separate physical root from plain files
+	encryptedStoragePath := s.cfg.VaultStorageRoot
 	s.encryptedStorageService, err = content.NewEncryptedStorageService(
 		s.storageService,
 		s.encryptionService,
@@ -307,7 +307,7 @@ func (s *Server) initServices() error {
 	s.consistencyService = operations.NewConsistencyService(
 		s.dbx,
 		s.embeddingsRepo,
-		"/mnt/data",
+		s.cfg.FilesStorageRoot,
 		time.Duration(s.cfg.ConsistencyCheckIntervalMin)*time.Minute,
 		s.logger,
 	)
