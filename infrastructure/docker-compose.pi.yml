@@ -101,11 +101,14 @@ services:
       CORS_ORIGINS: "http://${LAN_HOST}:3001,http://${LAN_HOST}"
       FRONTEND_URL: "http://${LAN_HOST}:3001"
       RATE_LIMIT_PER_MIN: "100"
+      # Persist plain files / vault on the RAID mounts (not WORKDIR /app).
+      FILES_STORAGE_ROOT: "${FILES_STORAGE_ROOT:-/mnt/data}"
+      VAULT_STORAGE_ROOT: "${VAULT_STORAGE_ROOT:-/media/frnd14}"
       # mDNS ist aktiv (kein MDNS_DISABLE gesetzt)
     volumes:
       - ${RAID_PATH}/data:/mnt/data
       - ${RAID_PATH}/backups:/mnt/backups
-      - ${RAID_PATH}/encrypted:/media/user      # Tresor/verschluesselter Speicher (persistent, nobody-owned)
+      - ${RAID_PATH}/encrypted:/media/frnd14      # Tresor (muss zu VAULT_STORAGE_ROOT passen)
       - ${SSD_PATH}/dev-tls:/app/dev-certs      # (Dev-Fallback, in Prod ungenutzt)
       - ${SSD_PATH}/tls:/app/tls:ro             # Prod-Cert (Root-CA-signiert), read-only, nobody-lesbar
       # /host-Mount ENTFERNT (2026-08-09): war `/:/host:ro` (ganzes Host-FS read-only).
