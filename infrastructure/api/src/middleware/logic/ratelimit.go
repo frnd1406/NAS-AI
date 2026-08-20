@@ -27,10 +27,17 @@ type limiterEntry struct {
 	lastAccessUnix int64 // Use atomic operations for thread-safe updates
 }
 
-// NewRateLimiter creates a new rate limiter with TTL-based cleanup.
-// Burst equals the per-minute budget (legacy behaviour).
+// NewRateLimiter creates a limiter with TTL-based cleanup.
+// Sustained rate = perMin; burst is capped so sync/gallery spikes cannot dump the whole minute budget at once.
 func NewRateLimiter(cfg *config.Config) *RateLimiter {
-	return NewRateLimiterWithBurst(cfg.RateLimitPerMin, cfg.RateLimitPerMin)
+	burst := cfg.RateLimitPerMin
+	if burst > 120 {
+		burst = 120
+	}
+	if burst < 1 {
+		burst = 1
+	}
+	return NewRateLimiterWithBurst(cfg.RateLimitPerMin, burst)
 }
 
 // NewRateLimiterWithBurst creates a limiter with an explicit burst size.
@@ -132,14 +139,13 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 
 		if !limiter.Allow() {
 			c.Header("Retry-After", "30")
-			c.JSON(http.StatusTooManyRequests, gin.H{
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{
 					"code":        "rate_limit_exceeded",
 					"message":     "Too many requests. Please try again later.",
 					"retry_after": 30,
 				},
 			})
-			c.Abort()
 			return
 		}
 
