@@ -57,31 +57,35 @@ func NewHandler(
 
 // RegisterGlobalRoutes registers public auth routes (usually under /auth)
 func (h *Handler) RegisterGlobalRoutes(rg *gin.RouterGroup) {
-	authLimiter := logic.NewRateLimiter(&config.Config{RateLimitPerMin: 5})
+	// Separate buckets so dashboard refresh storms do not lock out login.
+	// login: moderate anti-bruteforce; refresh: higher (parallel clients); strict: register/reset.
+	loginLimiter := logic.NewRateLimiterWithBurst(20, 8)
+	refreshLimiter := logic.NewRateLimiterWithBurst(120, 40)
+	strictAuthLimiter := logic.NewRateLimiterWithBurst(10, 5)
 
 	rg.POST("/register",
-		authLimiter.Middleware(),
+		strictAuthLimiter.Middleware(),
 		RegisterHandler(h.cfg, h.userRepo, h.jwtService, h.passwordService, h.tokenService, h.emailService, h.redis, h.logger),
 	)
 	rg.POST("/login",
-		authLimiter.Middleware(),
+		loginLimiter.Middleware(),
 		LoginHandler(h.userRepo, h.jwtService, h.passwordService, h.webAuthnService, h.credentialRepo, h.redis, h.logger),
 	)
 
 	// WebAuthn second-factor login (public, rate-limited). Reached only after
 	// a successful password step that returned an mfa_token.
 	rg.POST("/login/webauthn/begin",
-		authLimiter.Middleware(),
+		loginLimiter.Middleware(),
 		WebAuthnLoginBeginHandler(h.webAuthnService, h.userRepo, h.logger),
 	)
 	rg.POST("/login/webauthn/finish",
-		authLimiter.Middleware(),
+		loginLimiter.Middleware(),
 		WebAuthnLoginFinishHandler(h.webAuthnService, h.userRepo, h.jwtService, h.redis, h.logger),
 	)
 	// Recovery-code second factor (public, rate-limited): fallback for a lost
 	// authenticator. Also reached only after a password step returned an mfa_token.
 	rg.POST("/login/recovery",
-		authLimiter.Middleware(),
+		loginLimiter.Middleware(),
 		WebAuthnLoginRecoveryHandler(h.recoveryService, h.webAuthnService, h.userRepo, h.jwtService, h.redis, h.logger),
 	)
 
@@ -111,9 +115,10 @@ func (h *Handler) RegisterGlobalRoutes(rg *gin.RouterGroup) {
 	rg.GET("/webauthn/recovery-codes", authGuard,
 		RecoveryCodesStatusHandler(h.recoveryService, h.logger),
 	)
-	// Refresh is rate-limited too: refresh tokens must not be brute-forceable.
+	// Refresh is rate-limited separately so parallel dashboard probes cannot
+	// exhaust the login bucket.
 	rg.POST("/refresh",
-		authLimiter.Middleware(),
+		refreshLimiter.Middleware(),
 		RefreshHandler(h.jwtService, h.redis, h.logger),
 	)
 	rg.POST("/logout",
@@ -123,7 +128,7 @@ func (h *Handler) RegisterGlobalRoutes(rg *gin.RouterGroup) {
 
 	// Email verification (rate-limited: token guessing)
 	rg.POST("/verify-email",
-		authLimiter.Middleware(),
+		strictAuthLimiter.Middleware(),
 		VerifyEmailHandler(h.userRepo, h.tokenService, h.emailService, h.logger),
 	)
 	rg.POST("/resend-verification",
@@ -133,11 +138,11 @@ func (h *Handler) RegisterGlobalRoutes(rg *gin.RouterGroup) {
 
 	// Password reset (rate-limited: enumeration / reset-token guessing)
 	rg.POST("/forgot-password",
-		authLimiter.Middleware(),
+		strictAuthLimiter.Middleware(),
 		ForgotPasswordHandler(h.userRepo, h.tokenService, h.emailService, h.logger),
 	)
 	rg.POST("/reset-password",
-		authLimiter.Middleware(),
+		strictAuthLimiter.Middleware(),
 		ResetPasswordHandler(h.userRepo, h.tokenService, h.passwordService, h.jwtService, h.redis, h.logger),
 	)
 }
