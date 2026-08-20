@@ -158,6 +158,16 @@ func LoadConfigWithViper() (*Config, error) {
 	// Allowed roots for operator-configurable storage paths
 	cfg.AllowedStorageRoots = parseStorageRoots(v.GetString("allowed_storage_roots"))
 
+	// Plain files + vault roots (must not stay empty — empty Abs() becomes WORKDIR /app)
+	cfg.FilesStorageRoot = strings.TrimSpace(v.GetString("files_storage_root"))
+	cfg.VaultStorageRoot = strings.TrimSpace(v.GetString("vault_storage_root"))
+	if cfg.FilesStorageRoot == "" {
+		cfg.FilesStorageRoot = DefaultFilesStorageRoot
+	}
+	if cfg.VaultStorageRoot == "" {
+		cfg.VaultStorageRoot = DefaultVaultStorageRoot
+	}
+
 	// Resolve WebAuthn relying-party settings (derive from FrontendURL/CORS).
 	cfg.WebAuthnRPID, cfg.WebAuthnRPDisplayName, cfg.WebAuthnRPOrigins = resolveWebAuthnConfig(
 		v.GetString("webauthn_rp_id"),
@@ -189,6 +199,8 @@ func setDefaults(v *viper.Viper) {
 
 	// Allowed roots for configurable storage paths
 	v.SetDefault("allowed_storage_roots", DefaultAllowedStorageRoots)
+	v.SetDefault("files_storage_root", DefaultFilesStorageRoot)
+	v.SetDefault("vault_storage_root", DefaultVaultStorageRoot)
 
 	// Rate limiting defaults
 	v.SetDefault("rate_limit_per_min", 100)
@@ -248,6 +260,8 @@ func bindEnvVars(v *viper.Viper) {
 
 	// Storage roots
 	_ = v.BindEnv("allowed_storage_roots", "ALLOWED_STORAGE_ROOTS")
+	_ = v.BindEnv("files_storage_root", "FILES_STORAGE_ROOT")
+	_ = v.BindEnv("vault_storage_root", "VAULT_STORAGE_ROOT")
 
 	// WebAuthn
 	_ = v.BindEnv("webauthn_rp_id", "WEBAUTHN_RP_ID")
@@ -376,6 +390,10 @@ func validateConfig(cfg *Config) error {
 	}
 	if !validLogLevels[cfg.LogLevel] {
 		return fmt.Errorf("CRITICAL: Invalid log level '%s' (must be: debug, info, warn, or error)", cfg.LogLevel)
+	}
+
+	if err := validateStorageRoots(cfg.FilesStorageRoot, cfg.VaultStorageRoot, cfg.AllowedStorageRoots); err != nil {
+		return err
 	}
 
 	return nil
