@@ -50,13 +50,19 @@ func NewContentDeliveryService(storage *StorageManager, encryptionSvc *security.
 }
 
 // GetStream prepares the file stream, handling encryption and range requests.
+// The path is resolved against the service's own (unscoped) storage — handlers
+// that already resolved a user-scoped full path must use GetStreamAt instead.
 func (s *ContentDeliveryService) GetStream(ctx context.Context, path string, rangeHeader string, password string, mode string, user *auth.User) (*FileStreamResult, error) {
 	// Get full filesystem path
 	fullPath, err := s.storage.GetFullPath(path)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
+	return s.GetStreamAt(ctx, fullPath, rangeHeader, password, mode, user)
+}
 
+// GetStreamAt is GetStream for an already-resolved absolute filesystem path.
+func (s *ContentDeliveryService) GetStreamAt(ctx context.Context, fullPath string, rangeHeader string, password string, mode string, user *auth.User) (*FileStreamResult, error) {
 	// Check if file exists
 	fileInfo, err := os.Stat(fullPath)
 	if err != nil {

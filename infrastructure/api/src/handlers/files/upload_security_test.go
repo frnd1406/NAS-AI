@@ -56,6 +56,7 @@ func TestStorageUpload_Security(t *testing.T) {
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("POST", "/upload", body)
 		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+		c.Set("user_id", testScopeUserID)
 
 		StorageUploadHandler(storageSvc, policySvc, nil, aiSvc, logger)(c)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -72,6 +73,7 @@ func TestStorageUpload_Security(t *testing.T) {
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("POST", "/upload", body)
 		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+		c.Set("user_id", testScopeUserID)
 
 		StorageUploadHandler(storageSvc, policySvc, nil, aiSvc, logger)(c)
 		assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -92,6 +94,7 @@ func TestStorageUpload_Security(t *testing.T) {
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("POST", "/upload", body)
 		c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+		c.Set("user_id", testScopeUserID)
 
 		StorageUploadHandler(storageSvc, policySvc, nil, aiSvc, logger)(c)
 
