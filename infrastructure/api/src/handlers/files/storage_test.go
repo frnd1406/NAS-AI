@@ -15,6 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testScopeUserID is the authenticated user injected into handler test
+// contexts — handlers scope all paths to homes/<user_id> via scopedStorage.
+const testScopeUserID = "44444444-4444-4444-8444-444444444444"
+
 func setupStorageTest(t *testing.T) (*content.StorageManager, *logrus.Logger, string) {
 	t.Helper()
 	base := t.TempDir()
@@ -22,7 +26,8 @@ func setupStorageTest(t *testing.T) (*content.StorageManager, *logrus.Logger, st
 	store, err := storage.NewLocalStore(base)
 	require.NoError(t, err)
 	svc := content.NewStorageManager(store, nil, nil, logger)
-	return svc, logger, base
+	require.NoError(t, svc.EnsureUserHome(testScopeUserID))
+	return svc, logger, filepath.Join(base, "homes", testScopeUserID)
 }
 
 func TestStorageList_PathTraversalForbidden(t *testing.T) {
@@ -34,6 +39,7 @@ func TestStorageList_PathTraversalForbidden(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/files?path=../../etc/passwd", nil)
 	c.Request = req
 	c.Set("request_id", "test")
+	c.Set("user_id", testScopeUserID)
 
 	StorageListHandler(svc, logger)(c)
 
@@ -49,6 +55,7 @@ func TestStorageDownload_PathTraversalForbidden(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/download?path=../../etc/passwd", nil)
 	c.Request = req
 	c.Set("request_id", "test")
+	c.Set("user_id", testScopeUserID)
 
 	// Pass nil for honeyfileService in tests
 	StorageDownloadHandler(svc, nil, logger)(c)
@@ -69,6 +76,7 @@ func TestStorageDownload_FileOK(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/download?path=/hello.txt", nil)
 	c.Request = req
 	c.Set("request_id", "test")
+	c.Set("user_id", testScopeUserID)
 
 	// Pass nil for honeyfileService in tests
 	StorageDownloadHandler(svc, nil, logger)(c)
