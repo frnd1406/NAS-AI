@@ -34,14 +34,18 @@ func TestSmartDownloadHandler_UnencryptedFile(t *testing.T) {
 	require.NoError(t, err)
 	storage := content.NewStorageManager(store, nil, nil, logger)
 
-	// Create test file
+	// Create test file inside the authenticated user's home (handlers scope
+	// all paths there via scopedStorage).
+	userHome := filepath.Join(tmpDir, "homes", testScopeUserID)
+	require.NoError(t, os.MkdirAll(userHome, 0o755))
 	testContent := []byte("Hello, this is test content for download!")
-	testFile := filepath.Join(tmpDir, "test.txt")
+	testFile := filepath.Join(userHome, "test.txt")
 	err = os.WriteFile(testFile, testContent, 0644)
 	require.NoError(t, err)
 
 	// Setup router
 	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("user_id", testScopeUserID) })
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger) // Mock/Empty encryption service
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)
@@ -81,8 +85,10 @@ func TestSmartDownloadHandler_EncryptedFile(t *testing.T) {
 	password := "testpassword123"
 	testContent := []byte("Secret encrypted content that must be decrypted!")
 
-	// Create encrypted file
-	encryptedPath := filepath.Join(tmpDir, "secret.txt.enc")
+	// Create encrypted file inside the authenticated user's home.
+	userHome := filepath.Join(tmpDir, "homes", testScopeUserID)
+	require.NoError(t, os.MkdirAll(userHome, 0o755))
+	encryptedPath := filepath.Join(userHome, "secret.txt.enc")
 	encFile, err := os.Create(encryptedPath)
 	require.NoError(t, err)
 
@@ -92,6 +98,7 @@ func TestSmartDownloadHandler_EncryptedFile(t *testing.T) {
 
 	// Setup router
 	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("user_id", testScopeUserID) })
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger)
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)
@@ -144,12 +151,15 @@ func TestSmartDownloadHandler_RangeRequest(t *testing.T) {
 	for i := range testContent {
 		testContent[i] = byte(i % 256)
 	}
-	testFile := filepath.Join(tmpDir, "range_test.bin")
+	userHome := filepath.Join(tmpDir, "homes", testScopeUserID)
+	require.NoError(t, os.MkdirAll(userHome, 0o755))
+	testFile := filepath.Join(userHome, "range_test.bin")
 	err = os.WriteFile(testFile, testContent, 0644)
 	require.NoError(t, err)
 
 	// Setup router
 	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("user_id", testScopeUserID) })
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger)
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)

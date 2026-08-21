@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/nas-ai/api/src/pathsafe"
@@ -72,7 +73,10 @@ func (s *HoneyfileService) StorageRoot() string {
 // instead of being silently rewritten.
 func (s *HoneyfileService) resolvePath(rawPath string) (string, error) {
 	rel := rawPath
-	if filepath.IsAbs(rawPath) {
+	// Slash-rooted paths count as absolute on every platform — on Windows
+	// filepath.IsAbs("/etc/passwd") is false and the path would silently be
+	// joined under the root instead of being range-checked.
+	if filepath.IsAbs(rawPath) || strings.HasPrefix(filepath.ToSlash(rawPath), "/") {
 		abs := filepath.Clean(rawPath)
 		inside, err := pathsafe.IsWithin(s.storageRoot, abs)
 		if err != nil {

@@ -1,12 +1,13 @@
 package auth_repo
 
 import (
-		"github.com/nas-ai/api/src/domain/auth"
-"context"
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/nas-ai/api/src/database"
+	"github.com/nas-ai/api/src/domain/auth"
 
 	"github.com/sirupsen/logrus"
 )
@@ -343,4 +344,102 @@ func (r *UserRepository) CountAdmins(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("failed to count admins: %w", err)
 	}
 	return n, nil
+}
+
+// ErrLastAdmin is returned when an operation would leave the system without
+// any admin account.
+var ErrLastAdmin = errors.New("last admin account")
+
+// ErrUserNotFound is returned when the target user row does not exist.
+var ErrUserNotFound = errors.New("user not found")
+
+// withAdminGuard runs fn inside a transaction that holds a row lock on every
+// admin account. Counting and mutating in one locked transaction is what makes
+// the last-admin check safe: two concurrent demotions of two different admins
+// would otherwise both read count=2 and both succeed, leaving zero admins.
+func (r *UserRepository) withAdminGuard(ctx context.Context, userID string, fn func(tx *sql.Tx, targetIsAdmin bool, adminCount int) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Lock all admin rows for the duration of the transaction.
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM users WHERE role = 'admin' FOR UPDATE`)
+	if err != nil {
+		return fmt.Errorf("failed to lock admin accounts: %w", err)
+	}
+	adminIDs := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return fmt.Errorf("failed to read admin accounts: %w", err)
+		}
+		adminIDs[id] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("failed to read admin accounts: %w", err)
+	}
+	rows.Close()
+
+	_, targetIsAdmin := adminIDs[userID]
+	if err := fn(tx, targetIsAdmin, len(adminIDs)); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
+// UpdateRoleGuarded changes a user's role, refusing to demote the last admin.
+// Returns ErrLastAdmin or ErrUserNotFound for those cases.
+func (r *UserRepository) UpdateRoleGuarded(ctx context.Context, userID, role string) error {
+	return r.withAdminGuard(ctx, userID, func(tx *sql.Tx, targetIsAdmin bool, adminCount int) error {
+		if targetIsAdmin && role != "admin" && adminCount <= 1 {
+			return ErrLastAdmin
+		}
+		result, err := tx.ExecContext(ctx,
+			`UPDATE users SET role = $1, updated_at = NOW() WHERE id = $2`, role, userID)
+		if err != nil {
+			return fmt.Errorf("failed to update user role: %w", err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ErrUserNotFound
+		}
+		r.logger.WithFields(logrus.Fields{
+			"user_id": userID,
+			"role":    role,
+		}).Info("User role updated successfully")
+		return nil
+	})
+}
+
+// DeleteUserGuarded removes a user, refusing to delete the last admin.
+// Returns ErrLastAdmin or ErrUserNotFound for those cases.
+func (r *UserRepository) DeleteUserGuarded(ctx context.Context, userID string) error {
+	return r.withAdminGuard(ctx, userID, func(tx *sql.Tx, targetIsAdmin bool, adminCount int) error {
+		if targetIsAdmin && adminCount <= 1 {
+			return ErrLastAdmin
+		}
+		result, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, userID)
+		if err != nil {
+			return fmt.Errorf("failed to delete user: %w", err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to get rows affected: %w", err)
+		}
+		if rowsAffected == 0 {
+			return ErrUserNotFound
+		}
+		r.logger.WithField("user_id", userID).Warn("User deleted successfully")
+		return nil
+	})
 }

@@ -16,6 +16,16 @@ import (
 // GET /api/v1/files/content?path=… (absolute under files root, or relative)
 func FileContentHandler(storageService content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Same per-user home scoping as every other files handler — without it
+		// this endpoint reads the shared root (vault/, homes/<other-user>/).
+		scoped, ok := scopedStorage(c, storageService)
+		if !ok {
+			return
+		}
+		// Shadow (not reassign) the captured variable: handlers run concurrently
+		// and share the closure, so writing it would be a data race.
+		storageService := scoped
+
 		filePath := c.Query("path")
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing path parameter"})
