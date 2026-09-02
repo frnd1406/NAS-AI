@@ -3,7 +3,6 @@ package files
 import (
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -16,6 +15,11 @@ import (
 // GET /api/v1/files/content?path=… (absolute under files root, or relative)
 func FileContentHandler(storageService content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		scoped, ok := scopedStorage(c, storageService)
+		if !ok {
+			return
+		}
+		storageService := scoped
 		filePath := c.Query("path")
 		if filePath == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "missing path parameter"})
@@ -42,12 +46,7 @@ func FileContentHandler(storageService content.StorageService, logger *logrus.Lo
 		// Open file via service
 		file, info, contentType, err := storageService.Open(relPath)
 		if err != nil {
-			if os.IsNotExist(err) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
-				return
-			}
-			logger.WithError(err).Error("Failed to open file via storage service")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to access file"})
+			handleStorageError(c, err, logger, c.GetString("request_id"))
 			return
 		}
 		defer file.Close()
