@@ -49,6 +49,13 @@ func NewContentDeliveryService(storage *StorageManager, encryptionSvc *security.
 	}
 }
 
+// ForStorage returns a request-local delivery service using the supplied storage scope.
+func (s *ContentDeliveryService) ForStorage(storage *StorageManager) *ContentDeliveryService {
+	scoped := *s
+	scoped.storage = storage
+	return &scoped
+}
+
 // GetStream prepares the file stream, handling encryption and range requests.
 func (s *ContentDeliveryService) GetStream(ctx context.Context, path string, rangeHeader string, password string, mode string, user *auth.User) (*FileStreamResult, error) {
 	// Get full filesystem path

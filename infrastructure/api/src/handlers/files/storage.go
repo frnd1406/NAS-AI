@@ -132,7 +132,7 @@ func StorageUploadHandler(storage content.StorageService, policyService security
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.PostForm("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -278,7 +278,7 @@ func StorageDownloadHandler(storage content.StorageService, honeySvc content.Hon
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.Query("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -356,7 +356,7 @@ func StorageDeleteHandler(storage content.StorageService, aiService intelligence
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.Query("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -411,7 +411,7 @@ func StorageDeleteBatchHandler(storage content.StorageService, aiService intelli
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		var req batchDeleteRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -488,7 +488,7 @@ func StorageTrashListHandler(storage content.StorageService, logger *logrus.Logg
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		items, err := storage.ListTrash()
 		if err != nil {
 			handleStorageError(c, err, logger, requestID)
@@ -505,7 +505,7 @@ func StorageTrashRestoreHandler(storage content.StorageService, logger *logrus.L
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		id := c.Param("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
@@ -526,7 +526,7 @@ func StorageTrashDeleteHandler(storage content.StorageService, logger *logrus.Lo
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		id := c.Param("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
@@ -548,7 +548,7 @@ func StorageTrashEmptyHandler(storage content.StorageService, logger *logrus.Log
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		// Get all trash items
 		items, err := storage.ListTrash()
@@ -589,7 +589,7 @@ func StorageRenameHandler(storage content.StorageService, logger *logrus.Logger)
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		var req renameRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -621,7 +621,7 @@ func StorageMoveHandler(storage content.StorageService, logger *logrus.Logger) g
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		var req moveRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -705,7 +705,7 @@ func StorageDownloadZipHandler(storage content.StorageService, logger *logrus.Lo
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.Query("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -824,7 +824,7 @@ func StorageBatchDownloadHandler(storage content.StorageService, logger *logrus.
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		var req batchDownloadRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -958,7 +958,7 @@ func StorageMkdirHandler(storage content.StorageService, logger *logrus.Logger) 
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		var req struct {
 			Path string `json:"path" binding:"required"`

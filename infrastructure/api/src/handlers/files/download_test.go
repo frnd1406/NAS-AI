@@ -18,6 +18,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const downloadTestUserID = "11111111-1111-1111-1111-111111111111"
+
+func userFilePath(t *testing.T, storage *content.StorageManager, rel string) string {
+	t.Helper()
+	require.NoError(t, storage.EnsureUserHome(downloadTestUserID))
+	scoped, err := storage.ForUser(downloadTestUserID)
+	require.NoError(t, err)
+	path, err := scoped.GetFullPath(rel)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+	return path
+}
+
+func addDownloadTestUser(router *gin.Engine) {
+	router.Use(func(c *gin.Context) {
+		c.Set("user_id", downloadTestUserID)
+		c.Next()
+	})
+}
+
 func TestSmartDownloadHandler_UnencryptedFile(t *testing.T) {
 	// Setup
 	gin.SetMode(gin.TestMode)
@@ -36,12 +56,14 @@ func TestSmartDownloadHandler_UnencryptedFile(t *testing.T) {
 
 	// Create test file
 	testContent := []byte("Hello, this is test content for download!")
-	testFile := filepath.Join(tmpDir, "test.txt")
+	testFile := userFilePath(t, storage, "test.txt")
 	err = os.WriteFile(testFile, testContent, 0644)
 	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("shared-root decoy"), 0o644))
 
 	// Setup router
 	router := gin.New()
+	addDownloadTestUser(router)
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger) // Mock/Empty encryption service
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)
@@ -82,7 +104,7 @@ func TestSmartDownloadHandler_EncryptedFile(t *testing.T) {
 	testContent := []byte("Secret encrypted content that must be decrypted!")
 
 	// Create encrypted file
-	encryptedPath := filepath.Join(tmpDir, "secret.txt.enc")
+	encryptedPath := userFilePath(t, storage, "secret.txt.enc")
 	encFile, err := os.Create(encryptedPath)
 	require.NoError(t, err)
 
@@ -92,6 +114,7 @@ func TestSmartDownloadHandler_EncryptedFile(t *testing.T) {
 
 	// Setup router
 	router := gin.New()
+	addDownloadTestUser(router)
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger)
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)
@@ -144,12 +167,13 @@ func TestSmartDownloadHandler_RangeRequest(t *testing.T) {
 	for i := range testContent {
 		testContent[i] = byte(i % 256)
 	}
-	testFile := filepath.Join(tmpDir, "range_test.bin")
+	testFile := userFilePath(t, storage, "range_test.bin")
 	err = os.WriteFile(testFile, testContent, 0644)
 	require.NoError(t, err)
 
 	// Setup router
 	router := gin.New()
+	addDownloadTestUser(router)
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger)
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)

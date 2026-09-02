@@ -65,7 +65,7 @@ func SmartDownloadHandler(
 		if !ok {
 			return
 		}
-		storage = scoped.(*content.StorageManager)
+		storage := scoped.(*content.StorageManager)
 		path := c.Query("path")
 
 		if path == "" {
@@ -112,7 +112,7 @@ func SmartDownloadHandler(
 		}
 
 		// Delegate to ContentDeliveryService
-		result, err := deliverySvc.GetStream(c.Request.Context(), path, c.Request.Header.Get("Range"), password, mode, nil)
+		result, err := deliverySvc.ForStorage(storage).GetStream(c.Request.Context(), path, c.Request.Header.Get("Range"), password, mode, nil)
 		if err != nil {
 			if err.Error() == "VAULT_LOCKED" {
 				c.JSON(http.StatusLocked, gin.H{
