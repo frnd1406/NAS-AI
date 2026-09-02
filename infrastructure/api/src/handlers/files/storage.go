@@ -29,7 +29,7 @@ func handleStorageError(c *gin.Context, err error, logger *logrus.Logger, reques
 	message := "storage operation failed"
 
 	// Map specific errors to appropriate HTTP status codes and messages
-	if errors.Is(err, storage.ErrPathTraversal) {
+	if errors.Is(err, storage.ErrPathTraversal) || errors.Is(err, content.ErrPathTraversal) {
 		status = http.StatusForbidden
 		message = "access denied: path traversal detected"
 	} else if errors.Is(err, content.ErrInvalidFileType) {
