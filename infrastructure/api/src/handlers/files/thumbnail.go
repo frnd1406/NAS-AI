@@ -14,6 +14,14 @@ import (
 	_ "image/png"
 )
 
+// Decoding happens before resizing, so bound source dimensions to prevent a
+// tiny compressed image from forcing a multi-gigabyte allocation.
+const maxThumbnailSourcePixels = 50_000_000
+
+// Gallery requests arrive in bursts; serialize the memory-heavy decode step so
+// several otherwise valid high-resolution images cannot exhaust memory together.
+var thumbnailDecodeSlot = make(chan struct{}, 1)
+
 // buildImageThumbnail decodes a common image format and returns a JPEG thumbnail.
 // Returns ok=false when the format cannot be decoded (caller should fall back to full file).
 func buildImageThumbnail(r io.Reader, maxPixel int) (data []byte, contentType string, ok bool, err error) {
@@ -24,7 +32,24 @@ func buildImageThumbnail(r io.Reader, maxPixel int) (data []byte, contentType st
 		maxPixel = 1024
 	}
 
-	src, _, err := image.Decode(r)
+	var header bytes.Buffer
+	cfg, _, err := image.DecodeConfig(io.TeeReader(r, &header))
+	if err != nil {
+		return nil, "", false, nil
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 ||
+		cfg.Width > maxThumbnailSourcePixels/cfg.Height {
+		return nil, "", false, fmt.Errorf(
+			"image dimensions %dx%d exceed thumbnail safety limit",
+			cfg.Width,
+			cfg.Height,
+		)
+	}
+
+	thumbnailDecodeSlot <- struct{}{}
+	defer func() { <-thumbnailDecodeSlot }()
+
+	src, _, err := image.Decode(io.MultiReader(bytes.NewReader(header.Bytes()), r))
 	if err != nil {
 		return nil, "", false, nil
 	}
