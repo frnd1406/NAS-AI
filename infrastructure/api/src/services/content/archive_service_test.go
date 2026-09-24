@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"hash/crc32"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,5 +263,40 @@ func TestArchiveService_UnzipSecure_ContextCancellation(t *testing.T) {
 
 	if err == context.Canceled {
 		t.Log("Context cancellation correctly handled")
+	}
+}
+
+// TestArchiveService_UnzipSecure_LyingSizeHeader ensures an entry whose header
+// understates its real size is rejected instead of being written out in full.
+func TestArchiveService_UnzipSecure_LyingSizeHeader(t *testing.T) {
+	service := NewArchiveService(logrus.New())
+	destDir := t.TempDir()
+
+	payload := bytes.Repeat([]byte("A"), 4096)
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	w, err := zw.CreateRaw(&zip.FileHeader{
+		Name:               "liar.txt",
+		Method:             zip.Store,
+		CRC32:              crc32.ChecksumIEEE(payload),
+		CompressedSize64:   uint64(len(payload)),
+		UncompressedSize64: 16,
+	})
+	if err != nil {
+		t.Fatalf("CreateRaw: %v", err)
+	}
+	if _, err := w.Write(payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	_, err = service.UnzipSecure(context.Background(), bytes.NewReader(zipBuf.Bytes()), int64(zipBuf.Len()), destDir)
+	if err == nil {
+		t.Fatal("expected extraction of an entry with a lying size header to fail")
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "liar.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("partially extracted file must be removed, stat err: %v", statErr)
 	}
 }

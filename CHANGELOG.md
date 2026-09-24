@@ -7,6 +7,7 @@
 - Security: trash IDs and rename targets can no longer contain path segments (`..` could delete the whole home or move files into another user's home).
 - ZIP downloads skip symlinks; `Content-Disposition` file names are encoded (RFC 2231).
 - Repaired the failing `handlers/files` and integration tests; added regression tests for each fix.
+- Hardened ZIP extraction against archives with forged size headers; partial files are removed on failure.
 
 ## v2.2.0
 - UPS monitoring: new `GET /api/v1/system/hardware/ups` endpoint reading NUT over TCP (read-only), exposing online / on-battery / low-battery state.
