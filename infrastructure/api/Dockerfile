@@ -5,7 +5,7 @@ RUN apk add --no-cache git && go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/api ./src/main.go
 
-FROM alpine:3.19
+FROM alpine:3.24
 # su-exec = winziges Tool zum Privilegien-Drop (root -> nobody) im entrypoint
 RUN apk add --no-cache ca-certificates su-exec
 WORKDIR /app
