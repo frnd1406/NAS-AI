@@ -1,0 +1,68 @@
+name: Repository settings
+
+# Applies .github/repo-settings.json and .github/rulesets/*.json to this
+# repository, so settings and branch rules live in git and are restored
+# automatically (e.g. after re-creating the repository).
+#
+# Requires the secret REPO_ADMIN_TOKEN: a fine-grained personal access token
+# limited to this repository with "Administration: Read and write".
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - ".github/repo-settings.json"
+      - ".github/rulesets/**"
+      - ".github/workflows/repo-settings.yml"
+  schedule:
+    # Weekly re-apply reverts manual drift in the settings UI.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply settings and rulesets
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Check token
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Secret REPO_ADMIN_TOKEN is missing (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Repository flags
+        run: |
+          gh api --method PATCH "repos/$REPO" --input .github/repo-settings.json --silent
+          gh api --method PUT "repos/$REPO/vulnerability-alerts" --silent
+          gh api --method PUT "repos/$REPO/automated-security-fixes" --silent
+          gh api --method PUT "repos/$REPO/private-vulnerability-reporting" --silent
+          echo "Repository flags applied."
+
+      - name: Rulesets
+        run: |
+          for file in .github/rulesets/*.json; do
+            name=$(jq -r .name "$file")
+            id=$(gh api "repos/$REPO/rulesets" --paginate \
+              --jq ".[] | select(.name == \"$name\") | .id" | head -n1)
+            if [ -n "$id" ]; then
+              gh api --method PUT "repos/$REPO/rulesets/$id" --input "$file" --silent
+              echo "Updated ruleset '$name' ($id)"
+            else
+              gh api --method POST "repos/$REPO/rulesets" --input "$file" --silent
+              echo "Created ruleset '$name'"
+            fi
+          done

@@ -1,0 +1,52 @@
+name: Task
+description: A self-contained piece of work for a contributor or AI agent (one task = one branch = one PR).
+title: "<type>(<area>): <short description>"
+labels: [ "task" ]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done, and why?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - api
+        - orchestrator
+        - monitoring
+        - pentester
+        - analysis
+        - ai-agent
+        - deploy
+        - ci
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Files or packages that may be changed. Everything else is out of scope.
+      placeholder: |
+        - infrastructure/api/src/handlers/files/
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checkable conditions, including the tests that must exist or pass.
+      placeholder: |
+        - [ ] ...
+        - [ ] go test ./... passes in the affected module
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Things that must not be changed in this task.
