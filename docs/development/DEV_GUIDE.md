@@ -62,11 +62,35 @@ cd webui && npm install && npm run dev
 
 ## 3. Contributing Flow
 
-1. Branch erstellen: `feature/<description>`
+Kurzfassung für alle Mitwirkenden (Menschen und KI-Agenten): [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
+
+1. Branch erstellen: `feature/<description>` (auch `fix/`, `docs/`, `chore/`, `ci/`, `refactor/`, `test/`, `perf/`, `hotfix/`, `release/`)
 2. Implementieren (Tests schreiben)
-3. Lokale Tests: `go test ./...`, `npm test`
-4. Security Scan
-5. Pull Request
+3. Lokale Tests: `go test ./...` im betroffenen Go-Modul (WebUI ist derzeit pausiert und nicht in der CI)
+4. Security Scan: `make security-scan` in `infrastructure/api`
+5. Pull Request gegen `main`
+
+### Regeln auf GitHub (automatisch geprüft)
+
+| Regel | Wo definiert |
+|-------|--------------|
+| Kein direkter Push auf `main`, kein Force-Push, kein Löschen | `.github/rulesets/main.json` |
+| Merge nur per PR; Review durch Code Owner (`@frnd1406`) nötig, nur der Admin darf ohne Fremd-Review mergen | `.github/rulesets/main.json`, `.github/CODEOWNERS` |
+| Pflicht-Checks: `CI` (gofmt, vet, Tests, Lint neuer Befunde), `Rule check`, `Secrets (gitleaks)`, `Go security (gosec)`, `Dependency review`, `Analyze (…)` | `.github/rulesets/main.json` |
+| Labels nach Bereich und Größe, Warnung bei Überschneidung mit anderen offenen PRs | `.github/workflows/pr-hygiene.yml` |
+| Inaktive PRs: nach 14 Tagen `stale`, nach 21 Tagen geschlossen | `.github/workflows/stale.yml` |
+| Release-Tags `v*` sind unveränderlich | `.github/rulesets/tags.json` |
+| Commit-Autor = GitHub-noreply-Adresse, Conventional Commits (Englisch), keine `Co-Authored-By`-Zeilen, Branch-Namen wie oben | `.github/workflows/pr-rules.yml` |
+| Repo-Flags (Merge-Optionen, Secret Scanning, Push Protection, Dependabot) | `.github/repo-settings.json` |
+
+Der Workflow `repo-settings.yml` überträgt Flags und Rulesets bei Änderungen auf `main` und wöchentlich auf GitHub. Dafür braucht es das Secret `REPO_ADMIN_TOKEN` (Fine-grained PAT, nur dieses Repo, „Administration: Read and write“).
+
+Lokale Git-Identität für Commits:
+
+```bash
+git config user.name  "Felix Freund"
+git config user.email "226513012+frnd1406@users.noreply.github.com"
+```
 
 ## 4. Secrets Management
 

@@ -1,0 +1,37 @@
+name: Stale PRs
+
+# Abandoned PRs (e.g. from an agent session that ended) block files for
+# others and go out of date. Issues are not touched: they are the backlog.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stale:
+    name: Mark and close stale PRs
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: -1
+          days-before-issue-close: -1
+          days-before-pr-stale: 14
+          days-before-pr-close: 7
+          stale-pr-label: stale
+          exempt-pr-labels: keep-open
+          exempt-draft-pr: false
+          stale-pr-message: >-
+            No activity for 14 days. This PR will be closed in 7 days unless it
+            is updated or labelled `keep-open`.
+          close-pr-message: >-
+            Closed after 21 days without activity. Reopen or create a new PR
+            from the current main if the work is still needed.
+          delete-branch: false

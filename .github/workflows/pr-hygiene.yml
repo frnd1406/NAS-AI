@@ -1,0 +1,97 @@
+name: PR hygiene
+
+# Helps when several contributors (people or AI agents) work in parallel:
+# area labels, size labels, and a warning when open PRs touch the same files.
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types: [ opened, reopened, synchronize, ready_for_review ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: PR hygiene
+    # Fork PRs get a read-only token; labels and comments would fail.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      # Changed lines above this get the size/XL label and a warning.
+      MAX_LINES: "800"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Area labels
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: true
+
+      - name: Size and overlap report
+        run: |
+          set -euo pipefail
+
+          # Lockfiles and generated files do not count towards the size.
+          ignore='(^|/)(go\.sum|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$|(^|/)dist/'
+          gh api --paginate "repos/$REPO/pulls/$PR/files" \
+            --jq '.[] | [.filename, .changes] | @tsv' > files.tsv
+          lines=$(grep -Ev "$ignore" files.tsv | awk -F'\t' '{s+=$2} END {print s+0}' || true)
+          lines=${lines:-0}
+
+          if   [ "$lines" -lt 50 ];  then size=XS
+          elif [ "$lines" -lt 200 ]; then size=S
+          elif [ "$lines" -lt 500 ]; then size=M
+          elif [ "$lines" -le "$MAX_LINES" ]; then size=L
+          else size=XL
+          fi
+
+          for s in XS S M L XL; do
+            [ "$s" = "$size" ] && continue
+            gh api --method DELETE "repos/$REPO/issues/$PR/labels/size%2F$s" --silent 2>/dev/null || true
+          done
+          gh api --method POST "repos/$REPO/issues/$PR/labels" -f "labels[]=size/$size" --silent
+
+          # Other open PRs that change the same files.
+          cut -f1 files.tsv | sort -u > mine.txt
+          overlap=""
+          for other in $(gh api --paginate "repos/$REPO/pulls?state=open" --jq ".[] | select(.number != $PR) | .number"); do
+            shared=$(gh api --paginate "repos/$REPO/pulls/$other/files" --jq '.[].filename' \
+              | sort -u | comm -12 mine.txt - | grep -Ev "$ignore" | head -n 10 || true)
+            if [ -n "$shared" ]; then
+              overlap+="- #$other: $(echo "$shared" | sed 's/.*/`&`/' | paste -sd ',' - | sed 's/,/, /g')"$'\n'
+            fi
+          done
+
+          marker='<!-- pr-hygiene -->'
+          body="$marker"$'\n'"### PR hygiene"$'\n\n'
+          body+="**Size:** \`size/$size\` ($lines changed lines, lockfiles excluded)"$'\n'
+          if [ "$size" = "XL" ]; then
+            body+=$'\n'"> [!WARNING]"$'\n'"> Over $MAX_LINES lines. Split into smaller PRs (one task per PR) so each can be reviewed properly."$'\n'
+            echo "::warning::PR has $lines changed lines (limit $MAX_LINES)."
+          fi
+          if [ -n "$overlap" ]; then
+            body+=$'\n'"**Overlapping open PRs** — coordinate before merging to avoid conflicts:"$'\n'"$overlap"
+            echo "::warning::This PR changes files that other open PRs also change."
+          else
+            body+=$'\n'"**Overlapping open PRs:** none"$'\n'
+          fi
+
+          existing=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+            --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"$marker\"))) | .id" | head -n1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$REPO/issues/comments/$existing" -f body="$body" --silent
+          else
+            gh api --method POST "repos/$REPO/issues/$PR/comments" -f body="$body" --silent
+          fi
