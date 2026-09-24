@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/content"
+	"github.com/sirupsen/logrus"
 )
 
 // CheckpointRequest represents system integrity checkpoint configuration

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/operations"
+	"github.com/sirupsen/logrus"
 )
 
 // UnifiedQueryRequest is the request body for the /query endpoint

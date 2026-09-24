@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/operations"
+	"github.com/sirupsen/logrus"
 )
 
 // GetJobStatusHandler returns the status and result of an AI job

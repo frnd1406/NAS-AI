@@ -25,7 +25,7 @@ func TestHardwareService_GetStorageInfo(t *testing.T) {
 	for _, d := range disks {
 		if d.MountPoint == "/" {
 			foundRoot = true
-			t.Logf("Root disk: Total=%d, Used=%d, Free=%d, UsedPercent=%.2f%%", 
+			t.Logf("Root disk: Total=%d, Used=%d, Free=%d, UsedPercent=%.2f%%",
 				d.Total, d.Used, d.Free, d.UsedPercent)
 		}
 	}

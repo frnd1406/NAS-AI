@@ -1,8 +1,8 @@
 package operations
 
 import (
-		"github.com/nas-ai/api/src/repository/files"
-"context"
+	"context"
+	"github.com/nas-ai/api/src/repository/files"
 	"os"
 	"sync"
 	"time"

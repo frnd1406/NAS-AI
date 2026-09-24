@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/security"
+	"github.com/sirupsen/logrus"
 )
 
 // VaultStatusRequest is empty, just for documentation

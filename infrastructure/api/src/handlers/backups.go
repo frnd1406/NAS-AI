@@ -5,9 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/nas-ai/api/src/config"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/operations"
+	"github.com/sirupsen/logrus"
 )
 
 func BackupListHandler(backupSvc *operations.BackupService, logger *logrus.Logger) gin.HandlerFunc {
@@ -93,11 +93,11 @@ func BackupRestoreHandler(backupSvc *operations.BackupService, cfg *config.Confi
 
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": gin.H{
-					"code":            "restore_failed",
-					"message":         "failed to restore backup",
+					"code":             "restore_failed",
+					"message":          "failed to restore backup",
 					"emergency_backup": emergencyBackup.ID,
-					"recovery_hint":   "Use emergency backup to recover: POST /api/v1/backups/" + emergencyBackup.ID + "/restore",
-					"request_id":      requestID,
+					"recovery_hint":    "Use emergency backup to recover: POST /api/v1/backups/" + emergencyBackup.ID + "/restore",
+					"request_id":       requestID,
 				},
 			})
 			return

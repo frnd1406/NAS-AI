@@ -1,10 +1,10 @@
 package auth_repo
 
 import (
-		"github.com/nas-ai/api/src/domain/auth"
-"context"
+	"context"
 	"database/sql"
 	"fmt"
+	"github.com/nas-ai/api/src/domain/auth"
 
 	"github.com/nas-ai/api/src/database"
 

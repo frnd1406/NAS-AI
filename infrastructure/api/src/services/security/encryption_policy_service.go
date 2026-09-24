@@ -1,11 +1,9 @@
 package security
 
 import (
-		"github.com/nas-ai/api/src/domain/files"
-"path/filepath"
+	"github.com/nas-ai/api/src/domain/files"
+	"path/filepath"
 	"strings"
-
-
 )
 
 // ==============================================================================
