@@ -1,8 +1,8 @@
 package handlers
 
 import (
-		"github.com/nas-ai/api/src/repository/auth"
-"net/http"
+	"github.com/nas-ai/api/src/repository/auth"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 

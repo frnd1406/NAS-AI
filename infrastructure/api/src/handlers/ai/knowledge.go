@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/intelligence"
+	"github.com/sirupsen/logrus"
 )
 
 // ReconcileKnowledgeHandler triggers garbage collection for the AI knowledge index.

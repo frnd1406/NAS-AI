@@ -1,9 +1,8 @@
 package security
 
 import (
-		"github.com/nas-ai/api/src/domain/files"
-"testing"
-
+	"github.com/nas-ai/api/src/domain/files"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 )

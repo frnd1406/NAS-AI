@@ -1,0 +1,23 @@
+# gitleaks configuration: default rules plus a narrow allowlist for known
+# non-secrets. Keep entries value-specific so real secrets are still caught.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Documentation placeholders and truncated examples"
+regexTarget = "secret"
+regexes = [
+  '''\.\.\.$''',                # truncated examples like eyJhbGciOiJIUzI1NiIs...
+  '''^re_REPLACE_WITH_''',      # Resend key placeholder
+  '''^re_123456789$''',         # test fixture
+  '''^CLOUDFLARE_TOKEN$''',     # Cloudflare token placeholder
+]
+
+[[allowlists]]
+description = "Honeyfile decoy content (intentionally fake credentials)"
+paths = ['''infrastructure/api/src/services/content/honeyfile_service\.go''']
+regexTarget = "secret"
+regexes = [
+  '''FAKE_KEY_DO_NOT_USE''',
+  '''^L5BmPp4Ry9K8H4Q9TghPQbU4VYdnKMqFVWHTh6MZqz7kJ3wN8xYP$''',
+]

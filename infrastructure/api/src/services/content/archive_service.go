@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -127,7 +128,9 @@ func (s *ArchiveService) UnzipSecure(ctx context.Context, src io.Reader, size in
 
 		// Check if file content is actually extractable
 		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
+			if err := os.MkdirAll(fpath, 0755); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -150,14 +153,24 @@ func (s *ArchiveService) UnzipSecure(ctx context.Context, src io.Reader, size in
 			return nil, err
 		}
 
-		// Copy securely preventing massive memory allocation
-		_, err = io.Copy(outFile, rc)
+		// The size headers checked above are attacker-controlled, so cap the
+		// bytes actually written instead of trusting them.
+		limit := MaxSingleFileSize
+		if remaining := MaxDecompressedSize - (totalSize - int64(f.UncompressedSize64)); remaining < limit {
+			limit = remaining
+		}
+		written, err := io.CopyN(outFile, rc, limit+1)
 
 		outFile.Close()
 		rc.Close()
 
-		if err != nil {
+		if err != nil && !errors.Is(err, io.EOF) {
+			_ = os.Remove(fpath) // best-effort cleanup of the partial file
 			return nil, err
+		}
+		if written > limit {
+			_ = os.Remove(fpath) // best-effort cleanup of the partial file
+			return nil, fmt.Errorf("SECURITY: File %s exceeds decompression limit", f.Name)
 		}
 
 		result.ExtractedFiles = append(result.ExtractedFiles, fpath)

@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
+	"path/filepath"
+	"sync"
 	"testing"
-	"time"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -118,49 +121,57 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 }
 
-func TestMetricsThreadSafety(t *testing.T) {
-	m := NewMetrics()
-
-	// Simulate concurrent access
-	done := make(chan bool)
-
-	for i := 0; i < 10; i++ {
-		go func() {
-			m.RecordHealthCheck("test-service", true, 100*time.Millisecond)
-			done <- true
-		}()
+func TestRegistryConcurrentAccess(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry, err := NewServiceRegistry(filepath.Join(t.TempDir(), "registry.json"), logger)
+	if err != nil {
+		t.Fatalf("NewServiceRegistry: %v", err)
 	}
 
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			name := fmt.Sprintf("svc-%d", i)
+			if err := registry.Register(name, "http://localhost/health", []string{"core"}, nil); err != nil {
+				t.Errorf("Register: %v", err)
+			}
+		}(i)
 		go func() {
-			_ = m.GetPrometheusMetrics()
-			done <- true
+			defer wg.Done()
+			_ = registry.List()
+			_ = registry.FindByTag("core")
 		}()
 	}
+	wg.Wait()
 
-	// Wait for all goroutines
-	for i := 0; i < 20; i++ {
-		<-done
+	if got := len(registry.List()); got != 10 {
+		t.Errorf("Expected 10 services, got %d", got)
 	}
 }
 
-func TestRegistryJSON(t *testing.T) {
-	testJSON := `{
-		"services": [
-			{"name": "api", "url": "http://localhost:8080/health"}
-		]
-	}`
+func TestRegistryPersistence(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	path := filepath.Join(t.TempDir(), "registry.json")
 
-	var registry Registry
-	if err := json.NewDecoder(strings.NewReader(testJSON)).Decode(&registry); err != nil {
-		t.Fatalf("Failed to decode registry: %v", err)
+	registry, err := NewServiceRegistry(path, logger)
+	if err != nil {
+		t.Fatalf("NewServiceRegistry: %v", err)
+	}
+	if err := registry.Register("api", "http://localhost:8080/health", nil, nil); err != nil {
+		t.Fatalf("Register: %v", err)
 	}
 
-	if len(registry.Services) != 1 {
-		t.Errorf("Expected 1 service, got %d", len(registry.Services))
+	reloaded, err := NewServiceRegistry(path, logger)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
 	}
-
-	if registry.Services[0].Name != "api" {
-		t.Errorf("Expected service name 'api', got %s", registry.Services[0].Name)
+	entry, ok := reloaded.Get("api")
+	if !ok {
+		t.Fatal("Expected service 'api' after reload")
+	}
+	if entry.URL != "http://localhost:8080/health" {
+		t.Errorf("Expected URL http://localhost:8080/health, got %s", entry.URL)
 	}
 }

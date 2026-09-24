@@ -35,12 +35,25 @@ type ServiceStatus struct {
 	Uptime           float64
 }
 
+// ServiceSnapshot is a lock-free, point-in-time copy of a ServiceStatus.
+type ServiceSnapshot struct {
+	Name             string
+	URL              string
+	Healthy          bool
+	LastCheck        time.Time
+	LastHealthy      time.Time
+	ConsecutiveFails int
+	TotalChecks      int
+	TotalFailures    int
+	Uptime           float64
+}
+
 // Snapshot returns a thread-safe copy of the ServiceStatus
-func (s *ServiceStatus) Snapshot() ServiceStatus {
+func (s *ServiceStatus) Snapshot() ServiceSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return ServiceStatus{
+	return ServiceSnapshot{
 		Name:             s.Name,
 		URL:              s.URL,
 		Healthy:          s.Healthy,
@@ -245,12 +258,12 @@ func (o *Orchestrator) logSummary() {
 }
 
 // GetServiceStatus returns current status of all services as deep copies
-func (o *Orchestrator) GetServiceStatus() map[string]ServiceStatus {
+func (o *Orchestrator) GetServiceStatus() map[string]ServiceSnapshot {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 
 	// CONCURRENCY FIX: Return deep copies (values not pointers) to prevent concurrent modification
-	statusCopy := make(map[string]ServiceStatus, len(o.services))
+	statusCopy := make(map[string]ServiceSnapshot, len(o.services))
 	for k, v := range o.services {
 		statusCopy[k] = v.Snapshot()
 	}
