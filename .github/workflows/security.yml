@@ -120,7 +120,9 @@ jobs:
       # SARIF output does not fail the job; findings appear in Code Scanning.
       - name: Run govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          # govulncheck needs a newer Go than some modules pin; setup-go v6+
+          # sets GOTOOLCHAIN=local, so allow the toolchain download here.
+          GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
           govulncheck -format sarif ./... > raw.sarif
           # govulncheck repeats CVE aliases in rule tags; Code Scanning
           # rejects SARIF with duplicate tags.
