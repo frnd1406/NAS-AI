@@ -1,7 +1,6 @@
 package files
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -65,7 +64,7 @@ func SmartDownloadHandler(
 		if !ok {
 			return
 		}
-		storage = scoped.(*content.StorageManager)
+		storage := scoped.(*content.StorageManager)
 		path := c.Query("path")
 
 		if path == "" {
@@ -112,7 +111,7 @@ func SmartDownloadHandler(
 		}
 
 		// Delegate to ContentDeliveryService
-		result, err := deliverySvc.GetStream(c.Request.Context(), path, c.Request.Header.Get("Range"), password, mode, nil)
+		result, err := deliverySvc.ForStorage(storage).GetStream(c.Request.Context(), path, c.Request.Header.Get("Range"), password, mode, nil)
 		if err != nil {
 			if err.Error() == "VAULT_LOCKED" {
 				c.JSON(http.StatusLocked, gin.H{
@@ -160,20 +159,14 @@ func SmartDownloadHandler(
 		if inline {
 			disposition = "inline"
 		}
-		// Extract filename from path for content disposition
-		filename := filepath.Base(result.XAccelRedirect) // Fallback if XAccelRedirect is empty?
-		// Wait, result doesn't have filename directly, but we can get it from path
-		_, filename = filepath.Split(path)
-		// Strip .enc for display if user mode decryption happened? The service handles content type detection on decoded name.
-		// Detailed filename handling might be needed in result struct or just use path base.
-
-		// Note: The service doesn't return the display filename in struct yet.
-		// Use simple logic for now:
+		// The service does not return a display name; derive it from the path and
+		// strip the .enc suffix when the content was decrypted.
+		_, filename := filepath.Split(path)
 		if strings.HasSuffix(strings.ToLower(filename), ".enc") && mode != "raw" {
 			filename = filename[:len(filename)-4]
 		}
 
-		c.Header("Content-Disposition", fmt.Sprintf("%s; filename=\"%s\"", disposition, filename))
+		c.Header("Content-Disposition", contentDisposition(disposition, filename))
 
 		if result.ETag != "" {
 			c.Header("ETag", result.ETag)

@@ -2,6 +2,7 @@ package content
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,15 @@ import (
 )
 
 const userHomesDir = "homes"
+
+// ErrInvalidUserID is returned when a user ID cannot address a private home.
+var ErrInvalidUserID = errors.New("invalid user id")
+
+// UserScoper is implemented by storage backends that can confine a
+// StorageService to a single user's private home.
+type UserScoper interface {
+	ScopeToUser(userID string) (StorageService, error)
+}
 
 // UserHomeRel returns the storage-relative home directory for a user.
 func UserHomeRel(userID string) string {
@@ -22,16 +32,29 @@ func UserHomeRel(userID string) string {
 func (s *StorageManager) ForUser(userID string) (*StorageManager, error) {
 	id := strings.TrimSpace(userID)
 	if id == "" {
-		return nil, fmt.Errorf("user id required")
+		return nil, fmt.Errorf("%w: user id required", ErrInvalidUserID)
 	}
 	if _, err := uuid.Parse(id); err != nil {
-		return nil, fmt.Errorf("invalid user id")
+		return nil, ErrInvalidUserID
 	}
 	home := UserHomeRel(id)
 	clone := *s
 	clone.homePrefix = home
 	clone.trashPath = filepath.ToSlash(filepath.Join(home, ".trash"))
 	return &clone, nil
+}
+
+// ScopeToUser returns a StorageService confined to the user's home and makes
+// sure the home tree exists. It implements UserScoper.
+func (s *StorageManager) ScopeToUser(userID string) (StorageService, error) {
+	scoped, err := s.ForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.EnsureUserHome(userID); err != nil {
+		return nil, err
+	}
+	return scoped, nil
 }
 
 // EnsureUserHome creates the private home tree (idempotent), including the
@@ -100,7 +123,6 @@ func (s *StorageManager) migrateLegacyMediaIfNeeded(userID string) error {
 	}
 	return nil
 }
-
 
 // mapIn translates a client-relative path into the on-disk path under the user home.
 func (s *StorageManager) mapIn(rel string) (string, error) {

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- Security (file storage API): `GET /api/v1/files/content` now requires authentication and is scoped to the caller's home (it was public and read from the shared storage root).
+- Security: fixed a race in the storage handlers where concurrent requests from different users could operate on each other's homes.
+- Security: smart-download resolves paths inside the caller's home instead of the shared root.
+- Security: trash IDs and rename targets can no longer contain path segments (`..` could delete the whole home or move files into another user's home).
+- ZIP downloads skip symlinks; `Content-Disposition` file names are encoded (RFC 2231).
+- Repaired the failing `handlers/files` and integration tests; added regression tests for each fix.
+
 ## v2.2.0
 - UPS monitoring: new `GET /api/v1/system/hardware/ups` endpoint reading NUT over TCP (read-only), exposing online / on-battery / low-battery state.
 - Power alert banner and live UPS status card in the dashboard: on-battery warning, low-battery escalation, and an all-clear once mains power returns.

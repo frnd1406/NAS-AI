@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -36,12 +35,11 @@ func TestSmartDownloadHandler_UnencryptedFile(t *testing.T) {
 
 	// Create test file
 	testContent := []byte("Hello, this is test content for download!")
-	testFile := filepath.Join(tmpDir, "test.txt")
-	err = os.WriteFile(testFile, testContent, 0644)
-	require.NoError(t, err)
+	writeHomeFile(t, tmpDir, testUserA, "test.txt", testContent)
 
 	// Setup router
 	router := gin.New()
+	router.Use(asUser(testUserA))
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger) // Mock/Empty encryption service
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)
@@ -82,7 +80,7 @@ func TestSmartDownloadHandler_EncryptedFile(t *testing.T) {
 	testContent := []byte("Secret encrypted content that must be decrypted!")
 
 	// Create encrypted file
-	encryptedPath := filepath.Join(tmpDir, "secret.txt.enc")
+	encryptedPath := writeHomeFile(t, tmpDir, testUserA, "secret.txt.enc", nil)
 	encFile, err := os.Create(encryptedPath)
 	require.NoError(t, err)
 
@@ -92,6 +90,7 @@ func TestSmartDownloadHandler_EncryptedFile(t *testing.T) {
 
 	// Setup router
 	router := gin.New()
+	router.Use(asUser(testUserA))
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger)
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)
@@ -144,12 +143,11 @@ func TestSmartDownloadHandler_RangeRequest(t *testing.T) {
 	for i := range testContent {
 		testContent[i] = byte(i % 256)
 	}
-	testFile := filepath.Join(tmpDir, "range_test.bin")
-	err = os.WriteFile(testFile, testContent, 0644)
-	require.NoError(t, err)
+	writeHomeFile(t, tmpDir, testUserA, "range_test.bin", testContent)
 
 	// Setup router
 	router := gin.New()
+	router.Use(asUser(testUserA))
 	// Create delivery service
 	encryptionSvc := security.NewEncryptionService("", logger)
 	deliverySvc := content.NewContentDeliveryService(storage, encryptionSvc, logger)

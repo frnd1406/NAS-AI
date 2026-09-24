@@ -1,7 +1,6 @@
 package files
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -170,7 +169,7 @@ func EncryptedStorageDownloadHandler(encStorage content.EncryptedStorageServiceI
 		// Get original filename (strip .enc)
 		originalName := filepath.Base(path)
 
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", originalName))
+		c.Header("Content-Disposition", contentDisposition("attachment", originalName))
 		c.Header("X-Encrypted", "true")
 		c.DataFromReader(http.StatusOK, info.Size(), mimeType, reader, nil)
 	}

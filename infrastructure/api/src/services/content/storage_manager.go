@@ -24,7 +24,9 @@ import (
 )
 
 var (
-	ErrPathTraversal   = errors.New("path escapes base directory")
+	// ErrPathTraversal aliases the driver error so handlers map both the home
+	// scoping checks and the store's own checks to the same 403 response.
+	ErrPathTraversal   = storage.ErrPathTraversal
 	ErrInvalidFileType = errors.New("file type not allowed")
 	ErrFileTooLarge    = errors.New("file exceeds maximum size")
 )
@@ -79,6 +81,9 @@ func (s *StorageManager) SaveWithEncryption(
 	filename := fileHeader.Filename
 	if filename == "" {
 		return nil, errors.New("filename is required")
+	}
+	if err := validateEntryName(filename); err != nil {
+		return nil, err
 	}
 
 	// 1. Validation
@@ -417,10 +422,24 @@ type TrashEntry struct {
 	ModTime      time.Time `json:"modTime"`
 }
 
-func (s *StorageManager) RestoreFromTrash(id string) error {
-	srcRel := filepath.ToSlash(filepath.Join(s.trashPath, id))
+// trashEntryRel resolves a trash item ID (as returned by ListTrash) to its
+// store-relative path. IDs come from the client, so anything that could leave
+// the trash directory — or address the trash root itself — is rejected.
+func (s *StorageManager) trashEntryRel(id string) (string, error) {
+	clean := strings.Trim(filepath.ToSlash(id), "/")
+	if clean == "" || clean == "." || strings.Contains(clean, "\x00") || hasDotDotSegment(clean) {
+		return "", ErrPathTraversal
+	}
+	return filepath.ToSlash(filepath.Join(s.trashPath, clean)), nil
+}
 
-	parts := strings.SplitN(filepath.ToSlash(id), "/", 2)
+func (s *StorageManager) RestoreFromTrash(id string) error {
+	srcRel, err := s.trashEntryRel(id)
+	if err != nil {
+		return err
+	}
+
+	parts := strings.SplitN(strings.Trim(filepath.ToSlash(id), "/"), "/", 2)
 	if len(parts) != 2 {
 		return errors.New("invalid id")
 	}
@@ -433,11 +452,28 @@ func (s *StorageManager) RestoreFromTrash(id string) error {
 }
 
 func (s *StorageManager) DeleteFromTrash(id string) error {
-	targetRel := filepath.ToSlash(filepath.Join(s.trashPath, id))
+	targetRel, err := s.trashEntryRel(id)
+	if err != nil {
+		return err
+	}
 	return s.store.Delete(context.Background(), targetRel)
 }
 
+// validateEntryName ensures a client-supplied file name is a single path
+// component. filepath.Join would otherwise resolve "../" segments before the
+// store's traversal check runs, letting a rename escape into another home.
+func validateEntryName(name string) error {
+	if name == "" || name == "." || name == ".." ||
+		strings.ContainsAny(name, "/\\\x00") {
+		return ErrPathTraversal
+	}
+	return nil
+}
+
 func (s *StorageManager) Rename(oldRel, newName string) error {
+	if err := validateEntryName(newName); err != nil {
+		return err
+	}
 	mappedOld, err := s.mapIn(oldRel)
 	if err != nil {
 		return err

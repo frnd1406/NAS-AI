@@ -65,12 +65,18 @@ func NewHandler(
 
 // RegisterV1Routes registers API v1 files routes
 func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
-	// Public (or implicitly protected?)
-	rg.GET("/files/content", FileContentHandler(h.storageService, h.logger))
-
 	// Vault Public
 	rg.GET("/vault/status", VaultStatusHandler(h.encryptionService))
 	rg.GET("/vault/config", VaultConfigGetHandler(h.encryptionService))
+
+	// File preview (Protected, scoped to the caller's home). Must never be
+	// public: it reads file contents straight from storage.
+	filesGroup := rg.Group("/files")
+	filesGroup.Use(
+		logic.AuthMiddleware(h.jwtService, h.tokenService, h.redis, h.logger),
+		logic.CSRFMiddleware(h.redis, h.logger),
+	)
+	filesGroup.GET("/content", FileContentHandler(h.storageService, h.logger))
 
 	// Vault Uploads (Protected)
 	vaultUpload := rg.Group("/vault/upload")

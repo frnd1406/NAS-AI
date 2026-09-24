@@ -49,6 +49,14 @@ func NewContentDeliveryService(storage *StorageManager, encryptionSvc *security.
 	}
 }
 
+// ForStorage returns a copy of the service that resolves paths against the given
+// (typically per-user scoped) storage manager instead of the shared root.
+func (s *ContentDeliveryService) ForStorage(storage *StorageManager) *ContentDeliveryService {
+	clone := *s
+	clone.storage = storage
+	return &clone
+}
+
 // GetStream prepares the file stream, handling encryption and range requests.
 func (s *ContentDeliveryService) GetStream(ctx context.Context, path string, rangeHeader string, password string, mode string, user *auth.User) (*FileStreamResult, error) {
 	// Get full filesystem path
