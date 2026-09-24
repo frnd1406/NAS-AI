@@ -6,7 +6,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/monitoring-agent main.go
 
-FROM alpine:3.19
+FROM alpine:3.24
 RUN set -e; \
     echo "https://mirror1.hs-esslingen.de/pub/Mirrors/alpine/v3.19/main" > /etc/apk/repositories; \
     echo "https://mirror1.hs-esslingen.de/pub/Mirrors/alpine/v3.19/community" >> /etc/apk/repositories; \
