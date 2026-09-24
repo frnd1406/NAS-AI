@@ -121,7 +121,11 @@ jobs:
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-          govulncheck -format sarif ./... > govulncheck.sarif
+          govulncheck -format sarif ./... > raw.sarif
+          # govulncheck repeats CVE aliases in rule tags; Code Scanning
+          # rejects SARIF with duplicate tags.
+          jq '(.runs[].tool.driver.rules[]? | select(.properties.tags) | .properties.tags) |= unique' \
+            raw.sarif > govulncheck.sarif
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
