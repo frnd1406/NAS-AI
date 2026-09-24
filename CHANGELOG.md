@@ -8,6 +8,7 @@
 - ZIP downloads skip symlinks; `Content-Disposition` file names are encoded (RFC 2231).
 - Repaired the failing `handlers/files` and integration tests; added regression tests for each fix.
 - Hardened ZIP extraction against archives with forged size headers; partial files are removed on failure.
+- Orchestrator: fixed a data race in `ServiceRegistry.List` and replaced stale tests that no longer compiled.
 
 ## v2.2.0
 - UPS monitoring: new `GET /api/v1/system/hardware/ups` endpoint reading NUT over TCP (read-only), exposing online / on-battery / low-battery state.

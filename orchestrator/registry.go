@@ -100,6 +100,9 @@ func (sr *ServiceRegistry) Get(name string) (*ServiceRegistryEntry, bool) {
 
 // List returns all registered services
 func (sr *ServiceRegistry) List() []*ServiceRegistryEntry {
+	sr.mu.RLock()
+	defer sr.mu.RUnlock()
+
 	entries := make([]*ServiceRegistryEntry, 0, len(sr.services))
 	for _, entry := range sr.services {
 		// Deep copy the entry to prevent race conditions
