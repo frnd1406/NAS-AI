@@ -3,8 +3,6 @@ package files
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -34,6 +32,7 @@ func TestStorageList_PathTraversalForbidden(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/files?path=../../etc/passwd", nil)
 	c.Request = req
 	c.Set("request_id", "test")
+	c.Set("user_id", testUserA)
 
 	StorageListHandler(svc, logger)(c)
 
@@ -49,6 +48,7 @@ func TestStorageDownload_PathTraversalForbidden(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/download?path=../../etc/passwd", nil)
 	c.Request = req
 	c.Set("request_id", "test")
+	c.Set("user_id", testUserA)
 
 	// Pass nil for honeyfileService in tests
 	StorageDownloadHandler(svc, nil, logger)(c)
@@ -60,19 +60,19 @@ func TestStorageDownload_FileOK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc, logger, base := setupStorageTest(t)
 
-	// create file
-	target := filepath.Join(base, "hello.txt")
-	require.NoError(t, os.WriteFile(target, []byte("hi"), 0o644))
+	writeHomeFile(t, base, testUserA, "hello.txt", []byte("hi"))
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	req := httptest.NewRequest(http.MethodGet, "/download?path=/hello.txt", nil)
 	c.Request = req
 	c.Set("request_id", "test")
+	c.Set("user_id", testUserA)
 
 	// Pass nil for honeyfileService in tests
 	StorageDownloadHandler(svc, nil, logger)(c)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "attachment; filename=\"hello.txt\"", w.Header().Get("Content-Disposition"))
+	require.Equal(t, "attachment; filename=hello.txt", w.Header().Get("Content-Disposition"))
+	require.Equal(t, "hi", w.Body.String())
 }

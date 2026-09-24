@@ -86,6 +86,8 @@ func TestFileContent_Success(t *testing.T) {
 
 	// 3. Setup Mock Expectations - Storage returns temp file
 	env.StorageService.On("Open", "test/path.txt").Return(tmpFile, fileInfo, "text/plain", nil)
+	// The handler resolves the home root to strip absolute paths from AI results.
+	env.StorageService.On("GetFullPath", ".").Return("/srv/storage/homes/user-1", nil)
 
 	// 4. Setup Router
 	router := testutils.SetupTestRouter(env)
@@ -136,6 +138,8 @@ func TestFileDownload_WithHoneyfileCheck(t *testing.T) {
 
 	// 3. Mock storage
 	env.StorageService.On("Open", "documents/file.txt").Return(tmpFile, fileInfo, "text/plain", nil)
+	// The honeyfile check runs against the resolved on-disk path.
+	env.StorageService.On("GetFullPath", "documents/file.txt").Return(tmpFile.Name(), nil)
 
 	// Note: HoneyfileSvc is REAL - it will check the DB for honeyfiles
 	// Since we haven't created any honeyfiles, this file won't trigger
@@ -367,6 +371,8 @@ func TestFileDownload_NotFound(t *testing.T) {
 	// Mock storage to return file not found
 	env.StorageService.On("Open", "nonexistent/file.txt").
 		Return(nil, nil, "", errors.New("file not found"))
+	env.StorageService.On("GetFullPath", "nonexistent/file.txt").
+		Return("", errors.New("file not found"))
 
 	router := testutils.SetupTestRouter(env)
 	token, _ := env.GenerateTestToken("user-1", "test@example.com")
@@ -635,6 +641,7 @@ func TestSecurity_TamperedFileDownload(t *testing.T) {
 	// 3. Mock Storage to return this tampered file
 	// The Handler calls Storage.Open -> returns ReadSeeker -> Handler calls Encryption.DecryptStream
 	env.StorageService.On("Open", "tampered.enc").Return(tmpFile, fileInfo, "application/octet-stream", nil)
+	env.StorageService.On("GetFullPath", "tampered.enc").Return(tmpFile.Name(), nil)
 
 	// 4. Test Router
 	router := testutils.SetupTestRouter(env)

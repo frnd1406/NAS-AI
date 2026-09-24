@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func handleStorageError(c *gin.Context, err error, logger *logrus.Logger, reques
 	} else if errors.Is(err, content.ErrFileTooLarge) {
 		status = http.StatusBadRequest
 		message = "file too large: maximum upload size is 100MB"
-	} else if os.IsNotExist(err) {
+	} else if errors.Is(err, fs.ErrNotExist) {
 		status = http.StatusNotFound
 		message = "file or directory not found"
 	}
@@ -81,6 +82,13 @@ func isReservedRootName(name string) bool {
 func isReservedRootCreate(path string) bool {
 	clean := strings.Trim(filepath.ToSlash(path), "/")
 	return isReservedRootName(clean)
+}
+
+// isUnsafePathInput rejects NUL bytes and any ".." in client paths. The
+// substring check is deliberately stricter than a segment check: it also
+// blocks encoded variants such as "..%2f" before they reach the store.
+func isUnsafePathInput(path string) bool {
+	return strings.Contains(path, "\x00") || strings.Contains(path, "..")
 }
 
 func resolveStorageFullPath(storage content.StorageService, rel string) string {
@@ -132,13 +140,13 @@ func StorageUploadHandler(storage content.StorageService, policyService security
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.PostForm("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
 			return
 		}
-		if strings.Contains(path, "\x00") || strings.Contains(path, "..") {
+		if isUnsafePathInput(path) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
 			return
 		}
@@ -193,13 +201,6 @@ func StorageUploadHandler(storage content.StorageService, policyService security
 			return
 		}
 
-		// If file is empty or too small, we might want to reject it or let it pass with warning
-		if n == 0 {
-			// Let 0-byte files pass for now, or reject?
-			// Test expects "graceful" handling.
-			// DetectedType will be "application/octet-stream" for empty buffer usually.
-		}
-
 		detectedType := http.DetectContentType(buff[:n])
 
 		// Reset file pointer
@@ -248,7 +249,7 @@ func StorageUploadHandler(storage content.StorageService, policyService security
 
 		// ==== AI AGENT NOTIFICATION ====
 		// Only index UNENCRYPTED files (can't index encrypted content!)
-		if encryptionMode == files.EncryptionNone {
+		if encryptionMode == files.EncryptionNone && aiService != nil {
 			var extractedText string
 			if _, err := src.Seek(0, 0); err == nil {
 				const MaxIndexSize = 2 * 1024 * 1024
@@ -278,7 +279,7 @@ func StorageDownloadHandler(storage content.StorageService, honeySvc content.Hon
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.Query("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -344,7 +345,7 @@ func StorageDownloadHandler(storage content.StorageService, honeySvc content.Hon
 			defer file.Close()
 		}
 
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", info.Name()))
+		c.Header("Content-Disposition", contentDisposition("attachment", info.Name()))
 		c.DataFromReader(http.StatusOK, info.Size(), ctype, file, nil)
 	}
 }
@@ -356,7 +357,7 @@ func StorageDeleteHandler(storage content.StorageService, aiService intelligence
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.Query("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -411,7 +412,7 @@ func StorageDeleteBatchHandler(storage content.StorageService, aiService intelli
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		var req batchDeleteRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -434,7 +435,7 @@ func StorageDeleteBatchHandler(storage content.StorageService, aiService intelli
 
 		for _, raw := range req.Paths {
 			path := strings.TrimSpace(raw)
-			if path == "" || strings.Contains(path, "\x00") || strings.Contains(path, "..") {
+			if path == "" || isUnsafePathInput(path) {
 				failures = append(failures, batchDeleteFailure{Path: raw, Error: "invalid path"})
 				continue
 			}
@@ -488,7 +489,7 @@ func StorageTrashListHandler(storage content.StorageService, logger *logrus.Logg
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		items, err := storage.ListTrash()
 		if err != nil {
 			handleStorageError(c, err, logger, requestID)
@@ -505,7 +506,7 @@ func StorageTrashRestoreHandler(storage content.StorageService, logger *logrus.L
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		id := c.Param("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
@@ -526,7 +527,7 @@ func StorageTrashDeleteHandler(storage content.StorageService, logger *logrus.Lo
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		id := c.Param("id")
 		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
@@ -548,7 +549,7 @@ func StorageTrashEmptyHandler(storage content.StorageService, logger *logrus.Log
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		// Get all trash items
 		items, err := storage.ListTrash()
@@ -589,7 +590,7 @@ func StorageRenameHandler(storage content.StorageService, logger *logrus.Logger)
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		var req renameRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -621,7 +622,7 @@ func StorageMoveHandler(storage content.StorageService, logger *logrus.Logger) g
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		var req moveRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
@@ -705,7 +706,7 @@ func StorageDownloadZipHandler(storage content.StorageService, logger *logrus.Lo
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 		path := c.Query("path")
 		if path == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
@@ -738,68 +739,14 @@ func StorageDownloadZipHandler(storage content.StorageService, logger *logrus.Lo
 		}
 
 		// STREAMING: Write directly to response body to avoid OOM on large directories
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.zip\"", folderName))
+		c.Header("Content-Disposition", contentDisposition("attachment", folderName+".zip"))
 		c.Header("Content-Type", "application/zip")
 		c.Status(http.StatusOK)
 
 		zipWriter := zip.NewWriter(c.Writer)
 		defer zipWriter.Close()
 
-		// Walk the directory and add files to ZIP
-		err = filepath.Walk(fullPath, func(filePath string, fileInfo os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			// Skip the root directory itself
-			if filePath == fullPath {
-				return nil
-			}
-
-			// Get relative path for ZIP entry
-			relPath, err := filepath.Rel(fullPath, filePath)
-			if err != nil {
-				return err
-			}
-
-			// Skip hidden files and .trash
-			if strings.HasPrefix(filepath.Base(relPath), ".") {
-				if fileInfo.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-
-			if fileInfo.IsDir() {
-				// Add directory entry
-				_, err := zipWriter.Create(relPath + "/")
-				return err
-			}
-
-			// Add file to ZIP
-			header, err := zip.FileInfoHeader(fileInfo)
-			if err != nil {
-				return err
-			}
-			header.Name = relPath
-			header.Method = zip.Deflate
-
-			writer, err := zipWriter.CreateHeader(header)
-			if err != nil {
-				return err
-			}
-
-			file, err := os.Open(filePath)
-			if err != nil {
-				return err
-			}
-			defer file.Close()
-
-			_, err = io.Copy(writer, file)
-			return err
-		})
-
-		if err != nil {
+		if err := addDirToZip(zipWriter, fullPath, ""); err != nil {
 			// Cannot write JSON error response if headers are already sent.
 			logger.WithFields(logrus.Fields{
 				"request_id": requestID,
@@ -824,7 +771,7 @@ func StorageBatchDownloadHandler(storage content.StorageService, logger *logrus.
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		var req batchDownloadRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -856,98 +803,88 @@ func StorageBatchDownloadHandler(storage content.StorageService, logger *logrus.
 				continue
 			}
 
-			info, err := os.Stat(fullPath)
+			// Lstat: a symlink must never be followed out of the user's home.
+			info, err := os.Lstat(fullPath)
 			if err != nil {
 				continue
 			}
 
 			if info.IsDir() {
-				// Add directory contents to ZIP
-				baseName := filepath.Base(fullPath)
-				err = filepath.Walk(fullPath, func(filePath string, fileInfo os.FileInfo, err error) error {
-					if err != nil {
-						return err
-					}
-
-					if filePath == fullPath {
-						return nil
-					}
-
-					relPath, err := filepath.Rel(fullPath, filePath)
-					if err != nil {
-						return err
-					}
-
-					// Skip hidden files
-					if strings.HasPrefix(filepath.Base(relPath), ".") {
-						if fileInfo.IsDir() {
-							return filepath.SkipDir
-						}
-						return nil
-					}
-
-					zipPath := filepath.Join(baseName, relPath)
-
-					if fileInfo.IsDir() {
-						_, err := zipWriter.Create(zipPath + "/")
-						return err
-					}
-
-					header, err := zip.FileInfoHeader(fileInfo)
-					if err != nil {
-						return err
-					}
-					header.Name = zipPath
-					header.Method = zip.Deflate
-
-					writer, err := zipWriter.CreateHeader(header)
-					if err != nil {
-						return err
-					}
-
-					file, err := os.Open(filePath)
-					if err != nil {
-						return err
-					}
-					defer file.Close()
-
-					_, err = io.Copy(writer, file)
-					return err
-				})
-
-				if err != nil {
-					logger.WithFields(logrus.Fields{
-						"request_id": requestID,
-						"path":       path,
-						"error":      err.Error(),
-					}).Warn("storage: error adding directory to batch ZIP")
-				}
+				err = addDirToZip(zipWriter, fullPath, filepath.Base(fullPath))
 			} else {
-				// Add single file
-				header, err := zip.FileInfoHeader(info)
-				if err != nil {
-					continue
-				}
-				header.Name = info.Name()
-				header.Method = zip.Deflate
-
-				writer, err := zipWriter.CreateHeader(header)
-				if err != nil {
-					continue
-				}
-
-				file, err := os.Open(fullPath)
-				if err != nil {
-					continue
-				}
-				_, err = io.Copy(writer, file)
-				file.Close()
-				if err != nil {
-					continue
-				}
+				err = addFileToZip(zipWriter, fullPath, info, info.Name())
+			}
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"request_id": requestID,
+					"path":       path,
+					"error":      err.Error(),
+				}).Warn("storage: error adding entry to batch ZIP")
 			}
 		}
 	}
+}
+
+// addDirToZip streams the contents of root into zw, with entry names prefixed
+// by prefix. Hidden entries (including .trash) are skipped, and so is anything
+// that is not a regular file or directory: following a symlink could expose
+// files outside the user's home.
+func addDirToZip(zw *zip.Writer, root, prefix string) error {
+	return filepath.Walk(root, func(filePath string, fileInfo os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if filePath == root {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(root, filePath)
+		if err != nil {
+			return err
+		}
+
+		if strings.HasPrefix(filepath.Base(relPath), ".") {
+			if fileInfo.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		zipPath := filepath.ToSlash(filepath.Join(prefix, relPath))
+		if fileInfo.IsDir() {
+			_, err := zw.Create(zipPath + "/")
+			return err
+		}
+		return addFileToZip(zw, filePath, fileInfo, zipPath)
+	})
+}
+
+// addFileToZip adds a single regular file; other file types are silently skipped.
+func addFileToZip(zw *zip.Writer, fullPath string, info os.FileInfo, name string) error {
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = name
+	header.Method = zip.Deflate
+
+	writer, err := zw.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }() // read-only; close error carries no data loss
+
+	_, err = io.Copy(writer, file)
+	return err
 }
 
 // StorageMkdirHandler creates a new directory
@@ -958,7 +895,7 @@ func StorageMkdirHandler(storage content.StorageService, logger *logrus.Logger) 
 		if !ok {
 			return
 		}
-		storage = scoped
+		storage := scoped
 
 		var req struct {
 			Path string `json:"path" binding:"required"`

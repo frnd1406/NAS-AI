@@ -20,6 +20,12 @@ type MockStorageService struct {
 	mock.Mock
 }
 
+// ScopeToUser implements content.UserScoper. The mock has no per-user homes, so
+// it returns itself and expectations stay keyed on client-relative paths.
+func (m *MockStorageService) ScopeToUser(userID string) (content.StorageService, error) {
+	return m, nil
+}
+
 func (m *MockStorageService) Save(dir string, file multipart.File, fileHeader *multipart.FileHeader) (*content.SaveResult, error) {
 	args := m.Called(dir, file, fileHeader)
 	if args.Get(0) == nil {
