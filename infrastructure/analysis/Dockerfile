@@ -6,7 +6,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/analysis-agent main.go
 
-FROM alpine:3.19
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /app/analysis-agent /usr/local/bin/analysis-agent
 ENTRYPOINT ["analysis-agent"]
