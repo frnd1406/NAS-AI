@@ -21,9 +21,9 @@ func (pm *PrometheusMetrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var sb strings.Builder
 
-    // HOLEN DER DATEN THREAD-SAFE
-    // Wir nutzen die existierende Methode GetServiceStatus, die eine sichere Kopie liefert.
-    services := pm.orch.GetServiceStatus()
+	// HOLEN DER DATEN THREAD-SAFE
+	// Wir nutzen die existierende Methode GetServiceStatus, die eine sichere Kopie liefert.
+	services := pm.orch.GetServiceStatus()
 
 	// Health status metrics
 	sb.WriteString("# HELP orchestrator_service_healthy Whether service is healthy (1) or not (0)\n")

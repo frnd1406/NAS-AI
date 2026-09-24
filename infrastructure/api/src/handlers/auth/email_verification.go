@@ -1,15 +1,14 @@
 package auth
 
 import (
-		"github.com/nas-ai/api/src/repository/auth"
-"net/http"
+	"github.com/nas-ai/api/src/repository/auth"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
-	
-	"github.com/sirupsen/logrus"
 	"github.com/nas-ai/api/src/services/operations"
 	"github.com/nas-ai/api/src/services/security"
+	"github.com/sirupsen/logrus"
 )
 
 // VerifyEmailRequest represents the email verification request

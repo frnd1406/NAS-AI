@@ -56,19 +56,21 @@ lint: ## Run golangci-lint
 
 security-scan: ## Run security scans (gosec + gitleaks)
 	@echo "Running security scans..."
-	@echo "=== gosec (Go security checker) ==="
-	@if command -v gosec > /dev/null; then \
-		gosec -quiet ./...; \
+	@status=0; \
+	echo "=== gosec (Go security checker) ==="; \
+	if command -v gosec > /dev/null; then \
+		gosec -quiet ./... || status=1; \
 	else \
 		echo "⚠️  gosec not installed. Install: go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
-	fi
-	@echo ""
-	@echo "=== gitleaks (Secret scanner) ==="
-	@if command -v gitleaks > /dev/null; then \
-		gitleaks detect --source . --verbose; \
+	fi; \
+	echo ""; \
+	echo "=== gitleaks (Secret scanner) ==="; \
+	if command -v gitleaks > /dev/null; then \
+		gitleaks git ../.. --config ../../.gitleaks.toml --redact --verbose || status=1; \
 	else \
 		echo "⚠️  gitleaks not installed. Install: https://github.com/gitleaks/gitleaks"; \
-	fi
+	fi; \
+	exit $$status
 
 clean: ## Clean build artifacts
 	@echo "Cleaning..."

@@ -7,6 +7,13 @@
 - Security: trash IDs and rename targets can no longer contain path segments (`..` could delete the whole home or move files into another user's home).
 - ZIP downloads skip symlinks; `Content-Disposition` file names are encoded (RFC 2231).
 - Repaired the failing `handlers/files` and integration tests; added regression tests for each fix.
+- Hardened ZIP extraction against archives with forged size headers; partial files are removed on failure.
+- Orchestrator: fixed a data race in `ServiceRegistry.List` and replaced stale tests that no longer compiled.
+- CI: build/test for all Go modules (WebUI is paused and excluded), golangci-lint for new issues, secret scanning (gitleaks), gosec, govulncheck, dependency review and OpenSSF Scorecard; GitHub Actions are pinned to commit SHAs.
+- Repository rules as code: branch/tag rulesets, repository flags and commit rules (author, Conventional Commits, branch names) are defined under `.github/` and applied automatically.
+- Multi-contributor workflow: CONTRIBUTING.md, task/bug issue forms, PR hygiene (area and size labels, overlap warnings between open PRs), stale-PR cleanup.
+- `make security-scan` runs gitleaks even when gosec reports findings and scans the whole history.
+- Security: a leaked Cloudflare API token and sample tokens were purged from the docs and the git history.
 
 ## v2.2.0
 - UPS monitoring: new `GET /api/v1/system/hardware/ups` endpoint reading NUT over TCP (read-only), exposing online / on-battery / low-battery state.

@@ -1,0 +1,35 @@
+area/api:
+  - changed-files:
+      - any-glob-to-any-file: "infrastructure/api/**"
+area/orchestrator:
+  - changed-files:
+      - any-glob-to-any-file: "orchestrator/**"
+area/monitoring:
+  - changed-files:
+      - any-glob-to-any-file: "infrastructure/monitoring/**"
+area/pentester:
+  - changed-files:
+      - any-glob-to-any-file: "infrastructure/pentester/**"
+area/analysis:
+  - changed-files:
+      - any-glob-to-any-file: "infrastructure/analysis/**"
+area/ai-agent:
+  - changed-files:
+      - any-glob-to-any-file: "infrastructure/ai_knowledge_agent/**"
+area/webui:
+  - changed-files:
+      - any-glob-to-any-file: "infrastructure/webui/**"
+area/deploy:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "infrastructure/docker-compose*.yml"
+          - "infrastructure/**/Dockerfile"
+          - "infrastructure/*.sh"
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"

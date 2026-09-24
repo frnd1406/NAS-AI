@@ -9,9 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	
-	"github.com/sirupsen/logrus"
+
 	"github.com/nas-ai/api/src/services/content"
+	"github.com/sirupsen/logrus"
 )
 
 // UploadSession tracks an active chunked upload

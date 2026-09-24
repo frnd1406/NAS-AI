@@ -488,7 +488,7 @@ func VerifyUserEmailAdminHandler(userRepo *auth_repo.UserRepository, logger *log
 			return
 		}
 		logger.WithFields(logrus.Fields{
-			"user_id":    userID,
+			"user_id":     userID,
 			"verified_by": c.GetString("user_id"),
 		}).Info("Admin verified user email")
 		c.JSON(http.StatusOK, gin.H{"status": "verified"})
@@ -532,8 +532,8 @@ func ResetUserPasswordAdminHandler(
 			return
 		}
 		logger.WithFields(logrus.Fields{
-			"user_id":    userID,
-			"reset_by":   c.GetString("user_id"),
+			"user_id":  userID,
+			"reset_by": c.GetString("user_id"),
 		}).Warn("Admin reset user password")
 		c.JSON(http.StatusOK, gin.H{"status": "password_updated"})
 	}
