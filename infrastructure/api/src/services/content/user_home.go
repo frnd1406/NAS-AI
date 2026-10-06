@@ -100,6 +100,20 @@ func (s *StorageManager) migrateLegacyMediaIfNeeded(userID string) error {
 	if err != nil || !legacyInfo.IsDir() {
 		return nil
 	}
+	// The legacy folder is shared. Only a single-user NAS may adopt it; with
+	// several homes the owner is ambiguous and migrating would take the photos
+	// away from the other accounts.
+	homesFull, err := s.store.GetFullPath(userHomesDir)
+	if err != nil {
+		return err
+	}
+	homes, err := os.ReadDir(homesFull)
+	if err != nil {
+		return err
+	}
+	if len(homes) > 1 {
+		return nil
+	}
 	// Only migrate if user media dir is empty.
 	entries, err := os.ReadDir(userFull)
 	if err != nil {

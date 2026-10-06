@@ -2,6 +2,7 @@ package settings
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -233,15 +234,18 @@ func UpdateUserRoleHandler(userRepo *auth_repo.UserRepository, logger *logrus.Lo
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 			return
 		}
-		if user.IsAdmin() && req.Role == "user" {
-			if n, err := userRepo.CountAdmins(ctx); err == nil && n <= 1 {
+		// Guarded variant checks and mutates in one locked transaction so
+		// concurrent demotions cannot race the system down to zero admins.
+		if err := userRepo.UpdateRoleGuarded(ctx, userID, req.Role); err != nil {
+			switch {
+			case errors.Is(err, auth_repo.ErrLastAdmin):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin"})
-				return
+			case errors.Is(err, auth_repo.ErrUserNotFound):
+				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			default:
+				logger.WithError(err).Error("Failed to update user role")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
 			}
-		}
-		if err := userRepo.UpdateRole(ctx, userID, req.Role); err != nil {
-			logger.WithError(err).Error("Failed to update user role")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
 			return
 		}
 
@@ -422,14 +426,16 @@ func UpdateUserAdminHandler(userRepo *auth_repo.UserRepository, logger *logrus.L
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role"})
 				return
 			}
-			if string(user.Role) == "admin" && role == "user" {
-				if n, err := userRepo.CountAdmins(ctx); err == nil && n <= 1 {
+			if err := userRepo.UpdateRoleGuarded(ctx, userID, role); err != nil {
+				switch {
+				case errors.Is(err, auth_repo.ErrLastAdmin):
 					c.JSON(http.StatusBadRequest, gin.H{"error": "cannot demote the last admin"})
-					return
+				case errors.Is(err, auth_repo.ErrUserNotFound):
+					c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+				default:
+					logger.WithError(err).Error("admin update role failed")
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
 				}
-			}
-			if err := userRepo.UpdateRole(ctx, userID, role); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update role"})
 				return
 			}
 			user.Role = auth.UserRole(role)
@@ -454,20 +460,16 @@ func DeleteUserAdminHandler(userRepo *auth_repo.UserRepository, logger *logrus.L
 			return
 		}
 		ctx := c.Request.Context()
-		user, err := userRepo.FindByID(ctx, userID)
-		if err != nil || user == nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-			return
-		}
-		if user.IsAdmin() {
-			if n, err := userRepo.CountAdmins(ctx); err == nil && n <= 1 {
+		if err := userRepo.DeleteUserGuarded(ctx, userID); err != nil {
+			switch {
+			case errors.Is(err, auth_repo.ErrLastAdmin):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "cannot delete the last admin"})
-				return
+			case errors.Is(err, auth_repo.ErrUserNotFound):
+				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			default:
+				logger.WithError(err).Error("admin delete user failed")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user"})
 			}
-		}
-		if err := userRepo.DeleteUser(ctx, userID); err != nil {
-			logger.WithError(err).Error("admin delete user failed")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user"})
 			return
 		}
 		logger.WithFields(logrus.Fields{
