@@ -160,31 +160,3 @@ func (f *File) IsUserEncrypted() bool {
 func (f *File) IsDeleted() bool {
 	return f.DeletedAt != nil
 }
-
-// HumanSize returns a human-readable file size
-func (f *File) HumanSize() string {
-	const unit = 1024
-	if f.SizeBytes < unit {
-		return formatInt(f.SizeBytes) + " B"
-	}
-	div, exp := int64(unit), 0
-	for n := f.SizeBytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return formatFloat(float64(f.SizeBytes)/float64(div)) + " " + string("KMGTPE"[exp]) + "iB"
-}
-
-// Helper functions for HumanSize
-func formatInt(n int64) string {
-	return string(rune('0' + n))
-}
-
-func formatFloat(f float64) string {
-	// Simple 1 decimal place formatting
-	i := int64(f * 10)
-	if i%10 == 0 {
-		return string(rune('0'+i/10)) + ""
-	}
-	return string(rune('0'+i/10)) + "." + string(rune('0'+i%10))
-}
