@@ -89,11 +89,6 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 	// Public (Token based)
 	rg.POST("/system/metrics", SystemMetricsHandler(h.systemMetricsRepo, h.cfg.MonitoringToken, h.logger))
 
-	// Public (Hardware Stats - Runtime)
-	rg.GET("/system/hardware/storage", h.hardwareHandler.GetStorageInfoHandler())
-	rg.GET("/system/hardware/network", h.hardwareHandler.GetNetworkInfoHandler())
-	rg.GET("/system/hardware/ups", h.hardwareHandler.GetUPSInfoHandler())
-
 	// Public (Frontend Logging)
 	rg.POST("/system/logs/frontend", FrontendLogHandler(h.logger))
 
@@ -111,6 +106,11 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 	{
 		protected.GET("/system/metrics", SystemMetricsListHandler(h.systemMetricsRepo, h.logger))
 		protected.GET("/system/metrics/live", SystemMetricsLiveHandler(h.logger))
+		// Hardware stats: interface names, MACs, IPs, mount points and UPS state
+		// are recon-sensitive, so they require authentication like the metrics.
+		protected.GET("/system/hardware/storage", h.hardwareHandler.GetStorageInfoHandler())
+		protected.GET("/system/hardware/network", h.hardwareHandler.GetNetworkInfoHandler())
+		protected.GET("/system/hardware/ups", h.hardwareHandler.GetUPSInfoHandler())
 		// Host update posture (reveals hostname + kernel version -> recon-sensitive,
 		// so authenticated like metrics; read-only, never triggers the updater).
 		protected.GET("/system/updater-status", h.hardwareHandler.GetUpdaterStatusHandler())
