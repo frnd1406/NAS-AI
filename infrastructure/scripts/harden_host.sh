@@ -53,8 +53,6 @@ ufw allow in on lo
 
 # Allow Critical Services
 ufw allow 22/tcp comment 'SSH Access'
-ufw allow 80/tcp comment 'HTTP WebUI'
-ufw allow 443/tcp comment 'HTTPS WebUI'
 
 # DNS Config: Outgoing is ALLOWED by default.
 # Only uncomment below if acting as a DNS Server (e.g. AdGuard/PiHole)

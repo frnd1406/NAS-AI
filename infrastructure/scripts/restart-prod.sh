@@ -25,7 +25,7 @@ sleep 5
 
 # Validierung kritischer Container
 echo -e "${YELLOW}🏥 Validating critical containers...${NC}"
-CRITICAL_CONTAINERS=("postgres" "api" "webui")
+CRITICAL_CONTAINERS=("postgres" "api")
 FAILED_CONTAINERS=()
 
 check_container() {

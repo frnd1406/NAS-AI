@@ -118,15 +118,6 @@ cd NasServer/infrastructure/api
 docker build --no-cache -t nas-api:1.0.0 .
 ```
 
-### WebUI Image neu bauen
-```bash
-cd NasServer/infrastructure
-docker build \
-  --build-arg VITE_API_BASE_URL="https://api.example.com" \
-  -t nas-webui:1.0.0 \
-  webui
-```
-
 ### Container-Logs live ansehen
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f api
@@ -182,13 +173,6 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml logs api
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec api wget -q --spider http://localhost:8080/health
 ```
 
-### WebUI zeigt alte Version
-```bash
-# Browser-Cache leeren oder Hard Reload:
-# Chrome/Firefox: Ctrl+Shift+R
-# Safari: Cmd+Option+R
-```
-
 ---
 
 ## 📝 Best Practices
@@ -210,7 +194,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec api wget -q 
 
 4. **Backups vor großen Änderungen:**
    ```bash
-   # Via WebUI oder API
+   # Via Desktop-/iOS-App oder API
    curl -X POST https://example.com/api/v1/backups \
      -H "Authorization: Bearer $JWT_TOKEN" \
      -H "X-CSRF-Token: $CSRF_TOKEN"
@@ -224,7 +208,6 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec api wget -q 
 - Quick Reference: `NasServer/scripts/API_QUICK_REFERENCE.txt`
 - Docker Compose Config: `NasServer/infrastructure/docker-compose.prod.yml`
 - API Source: `NasServer/infrastructure/api/`
-- WebUI Source: `NasServer/infrastructure/webui/`
 
 ---
 

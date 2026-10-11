@@ -11,7 +11,6 @@
 | **postgres** | 5432 | pgvector/pg16 | ✅ |
 | **redis** | 6379 | Redis 7 Alpine | ✅ |
 | **api** | 8080 | Go 1.22 | ✅ |
-| **webui** | 80 | Vite + TailwindCSS | ✅ |
 | **monitoring** | - | Go Metrics Agent | ✅ |
 | **analysis-agent** | - | Go Analytics | ✅ |
 | **pentester-agent** | - | Go Security | ✅ |
@@ -40,7 +39,6 @@ infrastructure/
 ├── .env.prod                 # Production secrets
 │
 ├── api/                      # Go Backend (Port 8080)
-├── webui/                    # Vite Frontend (Port 80)
 ├── db/                       # PostgreSQL migrations
 ├── ai_knowledge_agent/       # Python ML Service (Port 5000)
 ├── monitoring/               # Metrics Agent

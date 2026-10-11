@@ -58,7 +58,6 @@ Technische Details zum Projekt stehen in
 - `.github/rulesets/`, `.github/repo-settings.json`, `.github/workflows/`
 - Secrets, Tokens, Zertifikate: gehören **nie** ins Repo (auch nicht in
   Doku oder Tests). `gitleaks` blockiert den PR.
-- `infrastructure/webui/`: derzeit pausiert.
 - Agenten-Konfiguration (`.claude/`, `.codex/`, `.agents/`, `AGENTS.md`)
   bleibt lokal und wird nicht committet.
 

@@ -15,7 +15,6 @@ infrastructure/
 ├── .env.prod                    ← Erstellen (siehe Schritt 1)
 ├── docker-compose.prod.yml
 ├── api/
-├── webui/
 ├── ai_knowledge_agent/
 ├── monitoring/
 ├── analysis/
@@ -86,7 +85,6 @@ curl http://localhost:5000/health
 
 | Service | Port | Beschreibung |
 |---------|------|--------------|
-| webui | 8080 | Frontend (Nginx) |
 | api | 8080 | Backend API (intern) |
 | ai-knowledge-agent | 5000 | Semantic Search |
 | postgres | 5432 | Datenbank (intern) |

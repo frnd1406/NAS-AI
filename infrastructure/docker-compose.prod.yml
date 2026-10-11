@@ -101,30 +101,6 @@ services:
       - nas-network
       - agent-network
 
-  webui:
-    build:
-      context: ./webui
-      dockerfile: Dockerfile
-      # No VITE_API_BASE_URL build arg → uses relative URLs via nginx proxy
-    image: nas-webui:1.0.0
-    container_name: nas-webui
-    env_file:
-      - ./.env.prod
-    environment:
-      NODE_ENV: production
-    depends_on:
-      api:
-        condition: service_started
-    ports:
-      - "8080:80"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - nas-network
-
   monitoring:
     build:
       context: ./monitoring

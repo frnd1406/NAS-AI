@@ -16,9 +16,6 @@ area/analysis:
 area/ai-agent:
   - changed-files:
       - any-glob-to-any-file: "infrastructure/ai_knowledge_agent/**"
-area/webui:
-  - changed-files:
-      - any-glob-to-any-file: "infrastructure/webui/**"
 area/deploy:
   - changed-files:
       - any-glob-to-any-file:

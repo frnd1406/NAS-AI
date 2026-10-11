@@ -48,10 +48,6 @@ echo "  ✓ API Service"
 mkdir -p "${OUTPUT_DIR}/api"
 rsync -a --exclude='tmp' --exclude='*.log' api/ "${OUTPUT_DIR}/api/"
 
-echo "  ✓ WebUI Service"
-mkdir -p "${OUTPUT_DIR}/webui"
-rsync -a --exclude='node_modules' --exclude='dist' --exclude='build' webui/ "${OUTPUT_DIR}/webui/"
-
 echo "  ✓ AI Knowledge Agent"
 mkdir -p "${OUTPUT_DIR}/ai_knowledge_agent"
 rsync -a --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' ai_knowledge_agent/ "${OUTPUT_DIR}/ai_knowledge_agent/"

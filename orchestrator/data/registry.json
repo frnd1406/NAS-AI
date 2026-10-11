@@ -1,20 +1,5 @@
 [
   {
-    "name": "webui",
-    "url": "http://localhost:3001/health",
-    "registered_at": "2025-11-22T18:00:00Z",
-    "tags": [
-      "frontend",
-      "react",
-      "development"
-    ],
-    "metadata": {
-      "env": "development",
-      "framework": "react+vite",
-      "type": "frontend"
-    }
-  },
-  {
     "name": "ai-knowledge-agent",
     "url": "http://localhost:5000/health",
     "registered_at": "2025-12-04T14:30:00Z",
