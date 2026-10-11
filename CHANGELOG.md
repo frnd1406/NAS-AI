@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Security: `GET /system/hardware/{network,storage,ups}`, `GET /vault/status` and `GET /vault/config` now require authentication (they exposed MAC/IP addresses, mount points, UPS state and the server-side vault path to anonymous callers). The iOS client only calls them after login.
+- Security: `POST /system/logs/frontend` is limited to 16 KB per request and truncates message/URL fields, so the public endpoint can no longer be used to flood the log.
 - Security: the API no longer trusts proxy headers (`X-Forwarded-For`) for the client IP, so the per-IP rate limit and audit logs cannot be spoofed.
 - Security: Go toolchain pinned to 1.26.9 in all modules and `golang.org/x/net` bumped to 0.60.0 (38 reachable standard-library and 4 `x/net` vulnerabilities reported by govulncheck).
 - Dependencies: migrated to go-redis v9 and gopsutil v4; orchestrator, pentester and analysis moved to Go 1.26; Postgres/pgvector and Redis images pinned to minor versions.
