@@ -2,6 +2,8 @@ module github.com/nas-ai/monitoring-agent
 
 go 1.26.0
 
+toolchain go1.26.9
+
 require github.com/shirou/gopsutil/v4 v4.26.9
 
 require (

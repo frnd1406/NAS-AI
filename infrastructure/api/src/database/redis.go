@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-redis/redis/v8"
 	"github.com/nas-ai/api/src/config"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 )
 

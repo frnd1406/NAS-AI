@@ -1,25 +1,4 @@
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: nas-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_models:/root/.ollama
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - nas-network
-    healthcheck:
-      test: [ "CMD", "ollama", "list" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
   postgres:
     image: pgvector/pgvector:pg16
     container_name: nas-api-postgres
@@ -247,31 +226,6 @@ services:
     networks:
       - nas-network
 
-  icloudpd:
-    image: boredazfcuk/icloudpd:latest
-    container_name: nas-icloudpd
-    env_file:
-      - ./.env.dev
-    environment:
-      - apple_id=${ICLOUD_APPLE_ID}
-      - TZ=Europe/Berlin
-      - synchronisation_interval=86400
-      - download_path=/icloud
-      - folder_structure={:%Y/%m/%d}
-      - photo_size=original
-      - skip_videos=false
-    volumes:
-      - icloud_photos:/icloud
-      - icloud_config:/config
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - nas-network
-    restart: unless-stopped
-
 volumes:
   postgres_data:
     driver: local
@@ -282,12 +236,6 @@ volumes:
   nas_backups:
     driver: local
   nas_vault:
-    driver: local
-  ollama_models:
-    driver: local
-  icloud_photos:
-    driver: local
-  icloud_config:
     driver: local
 
 networks:
