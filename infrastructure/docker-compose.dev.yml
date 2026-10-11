@@ -103,28 +103,6 @@ services:
       - nas-network
       - agent-network
 
-  webui:
-    build:
-      context: ./webui
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: "http://192.168.x.x:8080"
-    container_name: nas-webui
-    ports:
-      - "3001:80"
-    environment:
-      VITE_API_BASE_URL: "http://192.168.x.x:8080"
-    depends_on:
-      api:
-        condition: service_started
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - nas-network
-
   monitoring:
     build:
       context: ./monitoring

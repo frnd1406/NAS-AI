@@ -327,17 +327,6 @@ function test_planned_endpoints() {
     echo -e "${YELLOW}📖 Siehe Dokumentation für geplante Features${NC}"
 }
 
-function test_webui_connectivity() {
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}🌐 TESTING WEBUI CONNECTIVITY${NC}"
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}\n"
-
-    test_api_endpoint "GET" "http://localhost:3000" "WebUI Frontend"
-    test_api_endpoint "GET" "http://localhost:3000/api/health" "WebUI Backend Health"
-
-    echo -e "\n${YELLOW}Wenn WebUI offline: docker compose restart webui${NC}"
-}
-
 function test_ai_embeddings_detailed() {
     local BASE_URL="http://localhost:5000"
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
@@ -466,11 +455,10 @@ function menu_deployment() {
         echo -e "  ${CYAN}[SERVICES]${NC}"
         echo -e "  3) 🚀 Full Prod Deployment (Standard)"
         echo -e "  4) 🔄 Restart Backend (API Only)"
-        echo -e "  5) 🌐 Restart Frontend (WebUI)"
-        echo -e "  6) 🧠 Restart AI Agent"
+        echo -e "  5) 🧠 Restart AI Agent"
         echo ""
         echo -e "  ${CYAN}[STATUS]${NC}"
-        echo -e "  7) 📊 Service Status anzeigen"
+        echo -e "  6) 📊 Service Status anzeigen"
         echo ""
         echo "  0) 🔙 Zurück"
         echo ""
@@ -480,9 +468,8 @@ function menu_deployment() {
             2) quick_rebuild ;;
             3) deploy_full ;;
             4) docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart api; wait_for_enter ;;
-            5) docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build webui && docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --force-recreate webui; wait_for_enter ;;
-            6) docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart ai-knowledge-agent; wait_for_enter ;;
-            7) docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps; wait_for_enter ;;
+            5) docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" restart ai-knowledge-agent; wait_for_enter ;;
+            6) docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps; wait_for_enter ;;
             0) return ;;
             *) echo "Ungültig." ;;
         esac
@@ -560,12 +547,11 @@ function menu_testing() {
         echo ""
         echo -e "  ${CYAN}[SPECIALIZED TESTS]${NC}"
         echo -e "  5) 🚧 Test Planned/Future Endpoints"
-        echo -e "  6) 🌐 Test WebUI Connectivity"
-        echo -e "  7) 🤖 Test AI Embeddings (Detailed)"
-        echo -e "  8) 💾 Test Database Connectivity"
+        echo -e "  6) 🤖 Test AI Embeddings (Detailed)"
+        echo -e "  7) 💾 Test Database Connectivity"
         echo ""
         echo -e "  ${CYAN}[DOCUMENTATION]${NC}"
-        echo -e "  9) 📖 Show API Documentation Path"
+        echo -e "  8) 📖 Show API Documentation Path"
         echo ""
         echo -e "  0) 🔙 Zurück"
         echo ""
@@ -576,10 +562,9 @@ function menu_testing() {
             3) test_all_ai_api; wait_for_enter ;;
             4) test_all_orchestrator_api; wait_for_enter ;;
             5) test_planned_endpoints; wait_for_enter ;;
-            6) test_webui_connectivity; wait_for_enter ;;
-            7) test_ai_embeddings_detailed; wait_for_enter ;;
-            8) test_database_connectivity; wait_for_enter ;;
-            9) echo -e "${GREEN}API Dokumentation:${NC}";
+            6) test_ai_embeddings_detailed; wait_for_enter ;;
+            7) test_database_connectivity; wait_for_enter ;;
+            8) echo -e "${GREEN}API Dokumentation:${NC}";
                echo "  - Comprehensive: $BASE_DIR/API_ENDPOINTS_COMPREHENSIVE.md";
                echo "  - Summary: $BASE_DIR/API_ENDPOINTS_SUMMARY.md";
                echo "  - Quick Ref: $BASE_DIR/API_ENDPOINTS_QUICK_REFERENCE.txt";

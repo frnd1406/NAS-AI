@@ -47,8 +47,7 @@ docker compose -f docker-compose.dev.yml up -d
 # 4. Backend starten
 cd api && go run ./src/main.go
 
-# 5. Frontend starten (neues Terminal)
-cd webui && npm install && npm run dev
+# 5. Clients: Desktop-App (nas-desktop) oder iOS-App (nas-ios) gegen die lokale API verbinden
 ```
 
 ## 2. Code-Konventionen
@@ -66,7 +65,7 @@ Kurzfassung für alle Mitwirkenden (Menschen und KI-Agenten): [`CONTRIBUTING.md`
 
 1. Branch erstellen: `feature/<description>` (auch `fix/`, `docs/`, `chore/`, `ci/`, `refactor/`, `test/`, `perf/`, `hotfix/`, `release/`)
 2. Implementieren (Tests schreiben)
-3. Lokale Tests: `go test ./...` im betroffenen Go-Modul (WebUI ist derzeit pausiert und nicht in der CI)
+3. Lokale Tests: `go test ./...` im betroffenen Go-Modul
 4. Security Scan: `make security-scan` in `infrastructure/api`
 5. Pull Request gegen `main`
 

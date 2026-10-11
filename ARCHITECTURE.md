@@ -8,7 +8,7 @@ Technische Referenz für **NAS.AI** — ein sicheres, selbst-gehostetes NAS mit 
 
 ## Überblick
 
-NAS.AI ist als Microservice-Architektur mit Docker Compose aufgebaut. Kern ist eine Go-REST-API, die Authentifizierung, Datei-Operationen und die Zero-Knowledge-Verschlüsselung kapselt. Optionale Komponenten (WebUI, AI-Wissensmodul, Orchestrator) sind entkoppelt und können einzeln zugeschaltet werden.
+NAS.AI ist als Microservice-Architektur mit Docker Compose aufgebaut. Kern ist eine Go-REST-API, die Authentifizierung, Datei-Operationen und die Zero-Knowledge-Verschlüsselung kapselt. Optionale Komponenten (AI-Wissensmodul, Orchestrator) sind entkoppelt und können einzeln zugeschaltet werden.
 
 ---
 
@@ -19,7 +19,6 @@ NAS.AI ist als Microservice-Architektur mit Docker Compose aufgebaut. Kern ist e
 | `api` | 8080 | Go REST-API (Kern) | aktiv |
 | `postgres` | 5432 | Primärdatenbank (`pgvector`) | aktiv |
 | `redis` | 6379 | Cache, Sessions, Rate-Limiting | aktiv |
-| `webui` | 80 | React-Dashboard | optional |
 | `ai_knowledge_agent` | 5000 | Embeddings / RAG (Python) | **optional, derzeit deaktiviert** |
 | `orchestrator` | 9000 | Health-Monitoring, Metriken | optional |
 
@@ -97,13 +96,6 @@ make lint             # Linter
 export JWT_SECRET=$(openssl rand -base64 32) && make run
 ```
 
-### WebUI (React + Vite)
-```bash
-cd infrastructure/webui
-npm install && npm run dev      # Dev-Server
-npm run build                   # Production-Build
-```
-
 ### Deploy (Backend-only, Zielgerät)
 ```bash
 cd infrastructure
@@ -151,7 +143,6 @@ Alle Secrets werden beim Start geladen (fail-fast) und **nie** eingecheckt (sieh
 ## Verzeichnis-Referenz
 
 - `infrastructure/api/` — Go-Backend (Kern)
-- `infrastructure/webui/` — React-Frontend (optional)
 - `infrastructure/ai_knowledge_agent/` — Python-AI-Modul (optional, deaktiviert)
 - `infrastructure/pi-updater/` — YubiKey-gated Host-Patching (Ops)
 - `orchestrator/` — Health-Monitoring (optional)

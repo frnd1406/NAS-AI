@@ -25,7 +25,7 @@
 ```
                              ┌────────────────────────┐
                              │   Users & Clients      │
-                             │  WebUI / Mobile / CLI  │
+                             │  Desktop / iOS / CLI  │
                              └──────────┬─────────────┘
                                         │ HTTPS (JWT)
                                         ▼
@@ -75,7 +75,6 @@
 | **postgres** | 5432 | pgvector/pg16 | Primary DB + vector storage |
 | **redis** | 6379 | Redis 7 | Session cache, rate limiting |
 | **api** | 8080 | Go 1.22 | REST API, auth, files |
-| **webui** | 80 | Vite + TailwindCSS | Frontend UI |
 | **orchestrator** | 9000 | Go | Health monitoring, metrics |
 | **monitoring** | - | Go | System metrics collector |
 | **analysis-agent** | - | Go | Alert analysis |
@@ -97,7 +96,7 @@ docker compose -f infrastructure/docker-compose.dev.yml up -d
 ## 3. Data & Control Flows
 
 ```
-Users → WebUI → API Gateway (:8080)
+Users → Desktop/iOS → API Gateway (:8080)
                     │ JWT/CSRF
                     ▼
                Auth Service ──► Redis (sessions) + Postgres (users)
@@ -114,7 +113,7 @@ Users → WebUI → API Gateway (:8080)
 ```
 Service → Metrics → Orchestrator → Prometheus
               │
-              └──► Alerts → WebUI Toast Center
+              └──► Alerts → Client notifications
 ```
 
 ---
@@ -148,7 +147,6 @@ Strict-Transport-Security: max-age=31536000
 f1406/
 ├── infrastructure/           # Docker services
 │   ├── api/                  # Go backend
-│   ├── webui/                # Vite frontend
 │   ├── ai_knowledge_agent/   # Python ML service
 │   ├── monitoring/           # Metrics agent
 │   ├── analysis/             # Analytics agent

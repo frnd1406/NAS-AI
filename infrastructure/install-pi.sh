@@ -60,7 +60,6 @@ docker compose -f "$COMPOSE" --env-file "$ENV_FILE" up -d
 echo
 echo "Fertig."
 echo "  api  (TLS + mDNS): https://$LAN_HOST:8080"
-echo "  webui:             http://$LAN_HOST:3001"
 echo "  mDNS-Dienst:       _nasai._tcp  ->  Desktop-App 'Im Netzwerk suchen' findet den Server."
 echo
 echo "Status:  docker compose -f $COMPOSE --env-file $ENV_FILE ps"

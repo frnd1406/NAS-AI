@@ -14,7 +14,7 @@ Ausgelegt für den Betrieb im eigenen LAN (Raspberry Pi 5) — mit dem Anspruch,
 
 ```mermaid
 graph TD
-    Client[Desktop-App / WebUI] -->|HTTPS, private Root-CA| API[Go API Core :8080]
+    Client[Desktop-App / iOS-App] -->|HTTPS, private Root-CA| API[Go API Core :8080]
     API --> Auth[Auth: JWT + CSRF + Rate-Limit]
     API --> Svc[Service-Layer]
     Svc --> DB[(PostgreSQL + pgvector)]
@@ -25,7 +25,7 @@ graph TD
     Orch[Orchestrator] -. Health .-> API
 ```
 
-**Aktueller Betriebsmodus:** Backend-only Stack — **API + PostgreSQL + Redis**. WebUI, das AI-Wissensmodul und der Orchestrator sind eigenständige, optionale Komponenten (siehe unten).
+**Aktueller Betriebsmodus:** Backend-only Stack — **API + PostgreSQL + Redis**. Das AI-Wissensmodul und der Orchestrator sind eigenständige, optionale Komponenten (siehe unten).
 
 ---
 
@@ -68,7 +68,6 @@ Konfiguration über `.env` (Secrets werden nie eingecheckt — siehe `.env.templ
 
 ## 🧩 Optionale Komponenten
 
-- **WebUI** (`infrastructure/webui`) — React-Dashboard (Glassmorphism-UI).
 - **AI-Wissensmodul** (`infrastructure/ai_knowledge_agent`) — Python-Service für Embeddings/RAG; derzeit deaktiviert.
 - **Orchestrator** (`orchestrator`) — Health-Monitoring & Metriken.
 

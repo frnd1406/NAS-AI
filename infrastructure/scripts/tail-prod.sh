@@ -10,7 +10,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
-services="${*:-api webui postgres redis monitoring analysis-agent pentester-agent}"
+services="${*:-api postgres redis monitoring analysis-agent pentester-agent}"
 
 echo "Tailing logs for: ${services}"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" logs -f --tail=100 ${services}
