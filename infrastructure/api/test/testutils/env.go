@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/go-redis/redis/v8"
 	"github.com/nas-ai/api/src/config"
 	"github.com/nas-ai/api/src/database"
 	files_repo "github.com/nas-ai/api/src/repository/files"
 	"github.com/nas-ai/api/src/services/content"
 	"github.com/nas-ai/api/src/services/security"
 	"github.com/nas-ai/api/test/testutils/mocks"
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
