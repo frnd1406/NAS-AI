@@ -1,8 +1,8 @@
 module github.com/nas-ai/analysis-agent
 
-go 1.24.0
+go 1.26.0
 
-toolchain go1.24.10
+toolchain go1.26.9
 
 require (
 	github.com/jmoiron/sqlx v1.4.0

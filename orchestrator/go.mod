@@ -1,7 +1,5 @@
 module github.com/nas-ai/orchestrator
 
-go 1.24
+go 1.26.0
 
-require (
-	// No external dependencies - using standard library only
-)
+toolchain go1.26.9
