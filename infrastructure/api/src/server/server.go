@@ -417,6 +417,13 @@ func (s *Server) initRouter() {
 
 	s.router = gin.New()
 
+	// The API is reached directly (host network, no reverse proxy), so no
+	// proxy header may be trusted: otherwise a client can spoof X-Forwarded-For
+	// to dodge the per-IP rate limit and forge the IP in audit logs.
+	if err := s.router.SetTrustedProxies(nil); err != nil {
+		s.logger.WithError(err).Fatal("failed to disable trusted proxies")
+	}
+
 	// Middleware chain (Onion Principle)
 	rateLimiter := logic.NewRateLimiter(s.cfg)
 	s.router.Use(
