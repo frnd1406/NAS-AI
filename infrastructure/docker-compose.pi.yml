@@ -16,7 +16,8 @@
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16   # multi-arch (arm64); Phase 2 -> plain postgres
+    build: ./db   # pgvector 0.8.7-pg16 + patched OS packages
+    image: nas-postgres:16-pgvector0.8.7
     container_name: nas-postgres
     environment:
       POSTGRES_DB: nas_db
@@ -36,7 +37,8 @@ services:
     networks: [nas-network]
 
   redis:
-    image: redis:7-alpine
+    build: ./redis   # redis 7.4-alpine + patched packages
+    image: nas-redis:7.4
     container_name: nas-redis
     command: redis-server --appendonly yes
     ports:

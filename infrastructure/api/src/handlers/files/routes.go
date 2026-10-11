@@ -65,9 +65,17 @@ func NewHandler(
 
 // RegisterV1Routes registers API v1 files routes
 func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
-	// Vault Public
-	rg.GET("/vault/status", VaultStatusHandler(h.encryptionService))
-	rg.GET("/vault/config", VaultConfigGetHandler(h.encryptionService))
+	// Vault state and config (Protected): they reveal the server-side vault
+	// path and lock/KDF state, so they must not be reachable anonymously.
+	vaultInfo := rg.Group("/vault")
+	vaultInfo.Use(
+		logic.AuthMiddleware(h.jwtService, h.tokenService, h.redis, h.logger),
+		logic.CSRFMiddleware(h.redis, h.logger),
+	)
+	{
+		vaultInfo.GET("/status", VaultStatusHandler(h.encryptionService))
+		vaultInfo.GET("/config", VaultConfigGetHandler(h.encryptionService))
+	}
 
 	// File preview (Protected, scoped to the caller's home). Must never be
 	// public: it reads file contents straight from storage.
