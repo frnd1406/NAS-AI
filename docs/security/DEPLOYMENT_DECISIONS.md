@@ -43,6 +43,6 @@ unannounced storage-format upgrade.
 - **PostgreSQL 16 → 17/18:** requires `pg_dump`/restore or `pg_upgrade`; the
   data directory is not compatible across majors. Take a backup with
   `infrastructure/db-backup.sh`, restore into a new volume, then switch the image.
-- **Python 3.11 → 3.13 (`ai_knowledge_agent`):** supported until Oct 2027.
+- **Python 3.13 (`ai_knowledge_agent`):** done — required by numpy >= 2.5.
   Rebuild the image and run `batch_index.py` against a copy first;
   `psycopg2-binary` has no musl wheels and is compiled during the build.

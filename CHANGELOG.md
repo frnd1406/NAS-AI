@@ -7,6 +7,8 @@
 - Security: Go toolchain pinned to 1.26.9 in all modules and `golang.org/x/net` bumped to 0.60.0 (38 reachable standard-library and 4 `x/net` vulnerabilities reported by govulncheck).
 - Dependencies: migrated to go-redis v9 and gopsutil v4; orchestrator, pentester and analysis moved to Go 1.26; Postgres/pgvector and Redis images pinned to minor versions.
 - Removed the `ollama` and `icloudpd` containers from the dev/prod compose files.
+- Security: Postgres/pgvector and Redis now build from small overlay Dockerfiles (`infrastructure/db`, `infrastructure/redis`) that apply OS package updates; gosu is rebuilt with Go 1.26.9. Trivy reports 0 HIGH/CRITICAL fixable findings for all project images (was 29 + 25 for Postgres, 2 for Redis).
+- Fix: `ai_knowledge_agent` image failed to build since the numpy 2.5 bump (needs Python 3.12+); base image moved to Python 3.13 and pip removed from the runtime stage.
 - Security (file storage API): `GET /api/v1/files/content` now requires authentication and is scoped to the caller's home (it was public and read from the shared storage root).
 - Security: fixed a race in the storage handlers where concurrent requests from different users could operate on each other's homes.
 - Security: smart-download resolves paths inside the caller's home instead of the shared root.
