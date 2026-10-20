@@ -190,7 +190,7 @@
 
 ### Get CSRF Token
 - **Method:** `GET`
-- **Path:** `/api/v1/auth/csrf`
+- **Path:** `/api/v1/csrf`
 - **Description:** Retrieve CSRF token for state-changing operations
 - **Authentication:** Bearer JWT Token
 - **Response:** 200 OK
@@ -791,7 +791,7 @@
 ### Authentication
 
 - **JWT Tokens:** Issued by `/auth/login`, validated by Bearer header
-- **CSRF Tokens:** Issued by `/api/v1/auth/csrf`, required for state-changing operations
+- **CSRF Tokens:** Issued by `/api/v1/csrf`, required for state-changing operations
 - **Monitoring Token:** X-Monitoring-Token header for metrics submission
 - **Token Storage:** Redis (TTL-based expiration)
 
