@@ -58,9 +58,6 @@
             "context": "Analyze (go)"
           },
           {
-            "context": "Analyze (javascript-typescript)"
-          },
-          {
             "context": "Analyze (python)"
           }
         ]
