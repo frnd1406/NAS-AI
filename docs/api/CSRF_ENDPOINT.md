@@ -1,7 +1,7 @@
 # CSRF Endpoint - Dokumentation
 
 **Status:** ✅ Implementiert und deployed
-**URL:** `GET /auth/csrf`
+**URL:** `GET /api/v1/csrf`
 **Auth Required:** ✅ Yes (Bearer Token)
 
 ---
@@ -11,7 +11,7 @@
 ### Request
 
 ```http
-GET /auth/csrf HTTP/1.1
+GET /api/v1/csrf HTTP/1.1
 Host: your-domain.com
 Authorization: Bearer <JWT_ACCESS_TOKEN>
 ```
@@ -128,7 +128,7 @@ curl -X POST https://your-domain.com/auth/login \
 
 ### 2. Get CSRF Token
 ```bash
-curl -X GET https://your-domain.com/auth/csrf \
+curl -X GET https://your-domain.com/api/v1/csrf \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIs..."
 ```
 
@@ -196,13 +196,13 @@ apiGroup.Use(middleware.CSRFMiddleware(...))  // CSRF validation
 
 ### Local Test (without auth - should fail)
 ```bash
-curl -s http://localhost:8080/auth/csrf
+curl -s http://localhost:8080/api/v1/csrf
 # Response: {"error":{"code":"unauthorized",...}}
 ```
 
 ### Production Test (without auth - should fail)
 ```bash
-curl -s https://your-domain.com/auth/csrf
+curl -s https://your-domain.com/api/v1/csrf
 # Response: {"error":{"code":"unauthorized",...}}
 ```
 
@@ -217,7 +217,7 @@ LOGIN_RESPONSE=$(curl -s -X POST https://your-domain.com/auth/login \
 ACCESS_TOKEN=$(echo $LOGIN_RESPONSE | jq -r '.access_token')
 
 # 3. Get CSRF token
-CSRF_RESPONSE=$(curl -s -X GET https://your-domain.com/auth/csrf \
+CSRF_RESPONSE=$(curl -s -X GET https://your-domain.com/api/v1/csrf \
   -H "Authorization: Bearer $ACCESS_TOKEN")
 
 # 4. Extract CSRF token
@@ -267,10 +267,10 @@ interface ErrorResponse {
 ## Deployment Status
 
 - ✅ Handler implemented: `src/handlers/csrf.go`
-- ✅ Route registered: `GET /auth/csrf`
+- ✅ Route registered: `GET /api/v1/csrf`
 - ✅ Auth middleware applied
 - ✅ Tested locally
-- ✅ Deployed to production: https://your-domain.com/auth/csrf
+- ✅ Deployed to production: https://your-domain.com/api/v1/csrf
 - ✅ Redis integration working
 - ✅ Documentation complete
 
@@ -284,7 +284,7 @@ interface ErrorResponse {
 const { access_token } = await login(email, password);
 
 // Get CSRF token
-const { csrf_token } = await fetch('/auth/csrf', {
+const { csrf_token } = await fetch('/api/v1/csrf', {
   headers: {
     'Authorization': `Bearer ${access_token}`
   }
