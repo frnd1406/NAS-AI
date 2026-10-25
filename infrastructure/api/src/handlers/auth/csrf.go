@@ -16,7 +16,7 @@ import (
 // @Produce json
 // @Success 200 {object} map[string]string "CSRF token generated successfully"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
-// @Router /auth/csrf [get]
+// @Router /api/v1/csrf [get]
 func GetCSRFToken(redis *database.RedisClient, logger *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetString("request_id")
