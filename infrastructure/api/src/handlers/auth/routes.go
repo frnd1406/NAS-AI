@@ -121,8 +121,7 @@ func (h *Handler) RegisterGlobalRoutes(rg *gin.RouterGroup) {
 		refreshLimiter.Middleware(),
 		RefreshHandler(h.jwtService, h.redis, h.logger),
 	)
-	rg.POST("/logout",
-		logic.AuthMiddleware(h.jwtService, h.tokenService, h.redis, h.logger),
+	rg.POST("/logout", authGuard, csrfGuard,
 		LogoutHandler(h.jwtService, h.redis, h.logger),
 	)
 
