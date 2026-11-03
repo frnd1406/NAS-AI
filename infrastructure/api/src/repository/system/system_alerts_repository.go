@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/nas-ai/api/src/domain/system"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -96,5 +97,53 @@ func (r *SystemAlertsRepository) Create(ctx context.Context, severity, message s
 		return fmt.Errorf("failed to create alert: %w", err)
 	}
 
+	return nil
+}
+
+// CreateReturning inserts a new alert and returns the stored row.
+func (r *SystemAlertsRepository) CreateReturning(ctx context.Context, severity, message string) (*system.SystemAlert, error) {
+	query := `
+		INSERT INTO system_alerts (severity, message)
+		VALUES ($1, $2)
+		RETURNING id, severity, message, is_resolved, created_at
+	`
+
+	var a system.SystemAlert
+	if err := r.db.GetContext(ctx, &a, query, severity, message); err != nil {
+		r.logger.WithError(err).Error("failed to create alert")
+		return nil, fmt.Errorf("failed to create alert: %w", err)
+	}
+	return &a, nil
+}
+
+// FindRecentOpenByPrefix returns the newest open alert whose message starts with
+// prefix and that was created at or after since. Returns (nil, nil) if none.
+func (r *SystemAlertsRepository) FindRecentOpenByPrefix(ctx context.Context, prefix string, since time.Time) (*system.SystemAlert, error) {
+	query := `
+		SELECT id, severity, message, is_resolved, created_at
+		FROM system_alerts
+		WHERE is_resolved = FALSE
+		  AND created_at >= $2
+		  AND left(message, char_length($1)) = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+
+	var a system.SystemAlert
+	if err := r.db.GetContext(ctx, &a, query, prefix, since); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to look up recent alert: %w", err)
+	}
+	return &a, nil
+}
+
+// UpdateSeverityMessage updates severity and message of an open alert.
+func (r *SystemAlertsRepository) UpdateSeverityMessage(ctx context.Context, id, severity, message string) error {
+	query := `UPDATE system_alerts SET severity = $2, message = $3 WHERE id = $1`
+	if _, err := r.db.ExecContext(ctx, query, id, severity, message); err != nil {
+		return fmt.Errorf("failed to update alert: %w", err)
+	}
 	return nil
 }
