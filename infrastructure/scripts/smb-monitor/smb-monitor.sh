@@ -12,6 +12,7 @@ umask 077
 SMB_MONITOR_ENABLED="${SMB_MONITOR_ENABLED:-false}"
 API_URL="${API_URL:-http://192.168.178.81:8080/api/v1/system/events}"
 MONITORING_TOKEN_FILE="${MONITORING_TOKEN_FILE:-}"
+CACERT="${CACERT:-}"   # optional: pinned server cert / private root CA for https API_URL
 STATE_DIR="${STATE_DIR:-/var/lib/smb-monitor}"
 WINDOW_SECONDS="${WINDOW_SECONDS:-30}"
 SOURCE_NAME="${SOURCE_NAME:-$(hostname -s | tr -c 'A-Za-z0-9._\n-' '_')}"
@@ -67,7 +68,8 @@ send() {  # type ip count
   body="$(printf '{"source":"%s","type":"%s","src_ip":"%s","count":%d,"window_seconds":%d}' \
           "$SOURCE_NAME" "$1" "$2" "$3" "$WINDOW_SECONDS")"
   # Header goes through a process-substitution fd, so the token is not in argv.
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+  local ca=(); [[ -n "$CACERT" ]] && ca=(--cacert "$CACERT")
+  code="$(curl -sS "${ca[@]}" -o /dev/null -w '%{http_code}' --max-time 10 \
           -H @<(printf 'X-Monitoring-Token: %s\n' "$TOKEN") \
           -H 'Content-Type: application/json' -d "$body" "$API_URL" 2>/dev/null || echo 000)"
   if [[ "$code" != "201" ]]; then

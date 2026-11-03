@@ -22,3 +22,11 @@ rm /etc/systemd/system/smb-monitor.{service,timer} /home/nasserver/bin/smb-monit
 ```
 Cursors are kept in `/var/lib/smb-monitor/` (`cursor` = kernel log, `cursor.smbd`).
 The smbd log patterns (`NT_STATUS_WRONG_PASSWORD`, ...) should be checked against the real `journalctl -u smbd` output of your Samba version.
+
+## HTTPS (API listens with TLS only)
+Set in `/etc/default/smb-monitor`:
+```
+API_URL=https://192.168.178.81:8080/api/v1/system/events
+CACERT=/mnt/nvme/ssd/tls/server.crt
+```
+`CACERT` is optional and passed to curl as `--cacert`. Samba must log failed logins: `log level = 1 auth_audit:3` in `smb.conf` (at level 1 smbd logs nothing for wrong passwords).
