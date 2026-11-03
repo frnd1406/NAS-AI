@@ -62,7 +62,7 @@ func SystemAlertsStreamHandler(sub AlertSubscriber, logger *logrus.Logger) gin.H
 		h.Set("Connection", "keep-alive")
 		h.Set("X-Accel-Buffering", "no")
 		c.Status(http.StatusOK)
-		fmt.Fprint(c.Writer, ": connected\n\n")
+		_, _ = fmt.Fprint(c.Writer, ": connected\n\n")
 		flusher.Flush()
 
 		ticker := time.NewTicker(alertStreamHeartbeat)
