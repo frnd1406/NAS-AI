@@ -213,7 +213,6 @@ func (h *Handler) alertPublisher() AlertPublisher {
 		return h.redis.Publish(ctx, topic, payload).Err()
 	}
 }
-
 // alertSubscriber subscribes to the Redis channel system_alerts.
 func (h *Handler) alertSubscriber() AlertSubscriber {
 	if h.redis == nil {
