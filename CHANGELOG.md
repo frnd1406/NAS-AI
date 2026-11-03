@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Feature: `GET /api/v1/system/alerts/stream` (JWT) streams alert updates to the Desktop/iOS apps as Server-Sent Events (`event: alert`, JSON payload, `: ping` heartbeat every 15 s), fed by the Redis channel `system_alerts`. Clients reconnect on disconnect and re-sync via `GET /system/alerts`.
 - Host: `infrastructure/scripts/smb-monitor/` (script + systemd timer, every 30 s) reports UFW blocks on port 445 and failed SMB logins to `POST /system/events`; disabled by default via `SMB_MONITOR_ENABLED`.
 - Feature: `POST /api/v1/system/events` (auth: `X-Monitoring-Token`, constant-time compare) ingests host events (`ufw_block`, `smb_auth_fail`) and turns them into `system_alerts` (`ufw_block` = WARNING, `smb_auth_fail` with >= 3 per window = HIGH). Same source + type + IP within 5 minutes is merged into one alert. Each create/update is also published to the Redis channel `system_alerts`.
 - Removed: the WebUI (`infrastructure/webui`) and its compose services; the Desktop (Tauri) and iOS apps are the supported clients.

@@ -120,6 +120,8 @@ func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 		// so authenticated like metrics; read-only, never triggers the updater).
 		protected.GET("/system/updater-status", h.hardwareHandler.GetUpdaterStatusHandler())
 		protected.GET("/system/alerts", SystemAlertsListHandler(h.systemAlertsRepo, h.logger))
+		// Live alert updates for Desktop/iOS apps (Server-Sent Events).
+		protected.GET("/system/alerts/stream", SystemAlertsStreamHandler(h.alertSubscriber(), h.logger))
 		protected.GET("/jobs/:id", GetJobStatusHandler(h.jobService, h.logger)) // Generic job status
 
 		protected.POST("/system/alerts", SystemAlertCreateHandler(h.systemAlertsRepo, h.logger))
@@ -209,5 +211,29 @@ func (h *Handler) alertPublisher() AlertPublisher {
 	}
 	return func(ctx context.Context, topic string, payload []byte) error {
 		return h.redis.Publish(ctx, topic, payload).Err()
+	}
+}
+// alertSubscriber subscribes to the Redis channel system_alerts.
+func (h *Handler) alertSubscriber() AlertSubscriber {
+	if h.redis == nil {
+		return nil
+	}
+	return func(ctx context.Context, topic string) (<-chan []byte, func(), error) {
+		ps := h.redis.Subscribe(ctx, topic)
+		if _, err := ps.Receive(ctx); err != nil { // wait for subscribe confirmation
+			_ = ps.Close()
+			return nil, nil, err
+		}
+		out := make(chan []byte, 16)
+		go func() {
+			defer close(out)
+			for m := range ps.Channel() {
+				select {
+				case out <- []byte(m.Payload):
+				default: // slow client: drop; it re-syncs via GET /system/alerts
+				}
+			}
+		}()
+		return out, func() { _ = ps.Close() }, nil
 	}
 }
