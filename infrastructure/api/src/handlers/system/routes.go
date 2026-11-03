@@ -1,6 +1,8 @@
 package system
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"github.com/nas-ai/api/src/config"
 	"github.com/nas-ai/api/src/database"
@@ -88,6 +90,9 @@ func (h *Handler) RegisterPublicRoutes(rg *gin.RouterGroup) {
 func (h *Handler) RegisterV1Routes(rg *gin.RouterGroup) {
 	// Public (Token based)
 	rg.POST("/system/metrics", SystemMetricsHandler(h.systemMetricsRepo, h.cfg.MonitoringToken, h.logger))
+
+	// Public (Token based): host events (UFW blocks, SMB auth failures) -> alerts
+	rg.POST("/system/events", SystemEventsHandler(h.systemAlertsRepo, h.alertPublisher(), h.cfg.MonitoringToken, h.logger))
 
 	// Public (Frontend Logging)
 	rg.POST("/system/logs/frontend", FrontendLogHandler(h.logger))
@@ -195,4 +200,14 @@ func (h *Handler) RegisterDiagnosticsRoutes(rg *gin.RouterGroup) {
 		logic.AdminOnly(h.userRepo, h.logger),
 		h.diagnosticsHandler.RunSelfTest,
 	)
+}
+
+// alertPublisher pushes live alert updates to the Redis channel system_alerts.
+func (h *Handler) alertPublisher() AlertPublisher {
+	if h.redis == nil {
+		return nil
+	}
+	return func(ctx context.Context, topic string, payload []byte) error {
+		return h.redis.Publish(ctx, topic, payload).Err()
+	}
 }

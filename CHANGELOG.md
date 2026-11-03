@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Feature: `POST /api/v1/system/events` (auth: `X-Monitoring-Token`, constant-time compare) ingests host events (`ufw_block`, `smb_auth_fail`) and turns them into `system_alerts` (`ufw_block` = WARNING, `smb_auth_fail` with >= 3 per window = HIGH). Same source + type + IP within 5 minutes is merged into one alert. Each create/update is also published to the Redis channel `system_alerts`; apps read alerts via `GET /api/v1/system/alerts`. Host side: `infrastructure/scripts/smb-monitor/` (script + systemd timer, 30 s, disabled by default via `SMB_MONITOR_ENABLED`).
 - Removed: the WebUI (`infrastructure/webui`) and its compose services; the Desktop (Tauri) and iOS apps are the supported clients.
 - Security: `GET /system/hardware/{network,storage,ups}`, `GET /vault/status` and `GET /vault/config` now require authentication (they exposed MAC/IP addresses, mount points, UPS state and the server-side vault path to anonymous callers). The iOS client only calls them after login.
 - Security: `POST /system/logs/frontend` is limited to 16 KB per request and truncates message/URL fields, so the public endpoint can no longer be used to flood the log.
