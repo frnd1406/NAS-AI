@@ -1,0 +1,46 @@
+# Changelog
+
+## Unreleased
+- Feature: `GET /api/v1/system/alerts/stream` (JWT) streams alert updates to the Desktop/iOS apps as Server-Sent Events (`event: alert`, JSON payload, `: ping` heartbeat every 15 s), fed by the Redis channel `system_alerts`. Clients reconnect on disconnect and re-sync via `GET /system/alerts`.
+- Host: `infrastructure/scripts/smb-monitor/` (script + systemd timer, every 30 s) reports UFW blocks on port 445 and failed SMB logins to `POST /system/events`; disabled by default via `SMB_MONITOR_ENABLED`.
+- Feature: `POST /api/v1/system/events` (auth: `X-Monitoring-Token`, constant-time compare) ingests host events (`ufw_block`, `smb_auth_fail`) and turns them into `system_alerts` (`ufw_block` = WARNING, `smb_auth_fail` with >= 3 per window = HIGH). Same source + type + IP within 5 minutes is merged into one alert. Each create/update is also published to the Redis channel `system_alerts`.
+- Removed: the WebUI (`infrastructure/webui`) and its compose services; the Desktop (Tauri) and iOS apps are the supported clients.
+- Security: `GET /system/hardware/{network,storage,ups}`, `GET /vault/status` and `GET /vault/config` now require authentication (they exposed MAC/IP addresses, mount points, UPS state and the server-side vault path to anonymous callers). The iOS client only calls them after login.
+- Security: `POST /system/logs/frontend` is limited to 16 KB per request and truncates message/URL fields, so the public endpoint can no longer be used to flood the log.
+- Security: the API no longer trusts proxy headers (`X-Forwarded-For`) for the client IP, so the per-IP rate limit and audit logs cannot be spoofed.
+- Security: Go toolchain pinned to 1.26.9 in all modules and `golang.org/x/net` bumped to 0.60.0 (38 reachable standard-library and 4 `x/net` vulnerabilities reported by govulncheck).
+- Dependencies: migrated to go-redis v9 and gopsutil v4; orchestrator, pentester and analysis moved to Go 1.26; Postgres/pgvector and Redis images pinned to minor versions.
+- Removed the `ollama` and `icloudpd` containers from the dev/prod compose files.
+- Security: Postgres/pgvector and Redis now build from small overlay Dockerfiles (`infrastructure/db`, `infrastructure/redis`) that apply OS package updates; gosu is rebuilt with Go 1.26.9. Trivy reports 0 HIGH/CRITICAL fixable findings for all project images (was 29 + 25 for Postgres, 2 for Redis).
+- Fix: `ai_knowledge_agent` image failed to build since the numpy 2.5 bump (needs Python 3.12+); base image moved to Python 3.13 and pip removed from the runtime stage.
+- Security (file storage API): `GET /api/v1/files/content` now requires authentication and is scoped to the caller's home (it was public and read from the shared storage root).
+- Security: fixed a race in the storage handlers where concurrent requests from different users could operate on each other's homes.
+- Security: smart-download resolves paths inside the caller's home instead of the shared root.
+- Security: trash IDs and rename targets can no longer contain path segments (`..` could delete the whole home or move files into another user's home).
+- ZIP downloads skip symlinks; `Content-Disposition` file names are encoded (RFC 2231).
+- Repaired the failing `handlers/files` and integration tests; added regression tests for each fix.
+- Hardened ZIP extraction against archives with forged size headers; partial files are removed on failure.
+- Orchestrator: fixed a data race in `ServiceRegistry.List` and replaced stale tests that no longer compiled.
+- CI: build/test for all Go modules (WebUI is paused and excluded), golangci-lint for new issues, secret scanning (gitleaks), gosec, govulncheck, dependency review and OpenSSF Scorecard; GitHub Actions are pinned to commit SHAs.
+- Repository rules as code: branch/tag rulesets, repository flags and commit rules (author, Conventional Commits, branch names) are defined under `.github/` and applied automatically.
+- Multi-contributor workflow: CONTRIBUTING.md, task/bug issue forms, PR hygiene (area and size labels, overlap warnings between open PRs), stale-PR cleanup.
+- `make security-scan` runs gitleaks even when gosec reports findings and scans the whole history.
+- Security: a leaked Cloudflare API token and sample tokens were purged from the docs and the git history.
+
+## v2.2.0
+- UPS monitoring: new `GET /api/v1/system/hardware/ups` endpoint reading NUT over TCP (read-only), exposing online / on-battery / low-battery state.
+- Power alert banner and live UPS status card in the dashboard: on-battery warning, low-battery escalation, and an all-clear once mains power returns.
+
+## v2.1.1
+- Production TLS via a private Root CA (replaces self-signed / trust-on-first-use).
+- Hardened API container: runs unprivileged (`nobody`, `cap_drop: ALL`, `no-new-privileges`).
+- API bound to the LAN interface only (public IPv6 listener dropped).
+- Removed the full host-root bind mount from the API container.
+- Zero-knowledge vault: XChaCha20-Poly1305 (AEAD) with Argon2id key derivation, DEK kept in RAM only.
+- AI knowledge module made optional (public routes disabled by default).
+- Automated PostgreSQL backup scheduling (daily, with retention).
+
+## v1.0.0
+- Initial Release: Core Storage Engine, JWT Auth System, Postgres Persistence.
+- Automated Backup Scheduling with retention and configurable destination.
+- UI Overhaul (Nebula) for files, backups, and alerts.
