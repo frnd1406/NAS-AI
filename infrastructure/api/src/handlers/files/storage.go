@@ -1,0 +1,920 @@
+package files
+
+import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/nas-ai/api/src/domain/files"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/nas-ai/api/src/drivers/storage"
+	"github.com/nas-ai/api/src/services/content"
+	"github.com/nas-ai/api/src/services/intelligence"
+	"github.com/nas-ai/api/src/services/security"
+	"github.com/sirupsen/logrus"
+)
+
+func handleStorageError(c *gin.Context, err error, logger *logrus.Logger, requestID string) {
+	status := http.StatusBadRequest
+	message := "storage operation failed"
+
+	// Map specific errors to appropriate HTTP status codes and messages
+	if errors.Is(err, storage.ErrPathTraversal) {
+		status = http.StatusForbidden
+		message = "access denied: path traversal detected"
+	} else if errors.Is(err, content.ErrInvalidFileType) {
+		status = http.StatusBadRequest
+		message = "invalid file type: only images, documents, videos, and archives are allowed"
+	} else if errors.Is(err, content.ErrFileTooLarge) {
+		status = http.StatusBadRequest
+		message = "file too large: maximum upload size is 100MB"
+	} else if errors.Is(err, fs.ErrNotExist) {
+		status = http.StatusNotFound
+		message = "file or directory not found"
+	}
+
+	logger.WithFields(logrus.Fields{
+		"request_id": requestID,
+		"error":      err.Error(),
+		"status":     status,
+	}).Warn("storage: request failed")
+
+	c.JSON(status, gin.H{
+		"error": gin.H{
+			"code":       "storage_error",
+			"message":    message,
+			"request_id": requestID,
+		},
+	})
+}
+
+type renameRequest struct {
+	OldPath string `json:"oldPath" binding:"required"`
+	NewName string `json:"newName" binding:"required"`
+}
+
+// reservedRootNames must never appear in the plain Files root listing and cannot
+// be created/renamed there. Vault content stays reachable only via path "vault/…"
+// from the dedicated Vault UI (or encrypted handlers).
+var reservedRootNames = map[string]struct{}{
+	"vault":   {},
+	".system": {},
+	".trash":  {},
+	"homes":   {},
+}
+
+func isReservedRootName(name string) bool {
+	_, ok := reservedRootNames[strings.TrimSpace(name)]
+	return ok
+}
+
+func isReservedRootCreate(path string) bool {
+	clean := strings.Trim(filepath.ToSlash(path), "/")
+	return isReservedRootName(clean)
+}
+
+// isUnsafePathInput rejects NUL bytes and any ".." in client paths. The
+// substring check is deliberately stricter than a segment check: it also
+// blocks encoded variants such as "..%2f" before they reach the store.
+func isUnsafePathInput(path string) bool {
+	return strings.Contains(path, "\x00") || strings.Contains(path, "..")
+}
+
+func resolveStorageFullPath(storage content.StorageService, rel string) string {
+	if full, err := storage.GetFullPath(rel); err == nil && full != "" {
+		return full
+	}
+	return rel
+}
+
+func filterReservedRootListing(path string, items []content.StorageEntry) []content.StorageEntry {
+	if strings.Trim(filepath.ToSlash(path), "/") != "" {
+		return items
+	}
+	out := make([]content.StorageEntry, 0, len(items))
+	for _, item := range items {
+		if isReservedRootName(item.Name) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func StorageListHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		path := c.Query("path")
+
+		items, err := scoped.List(path)
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"items": filterReservedRootListing(path, items),
+		})
+	}
+}
+
+func StorageUploadHandler(storage content.StorageService, policyService security.EncryptionPolicyServiceInterface, honeySvc content.HoneyfileServiceInterface, aiService intelligence.AIAgentServiceInterface, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		path := c.PostForm("path")
+		if path == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+			return
+		}
+		if isUnsafePathInput(path) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
+			return
+		}
+
+		// ==== PHASE 3B: Hybrid Encryption with Policy Support ====
+		// Read encryption override from form (AUTO, FORCE_USER, FORCE_NONE)
+		encryptionOverride := c.PostForm("encryption_override")
+		encryptionPassword := c.PostForm("encryption_password") // Required for USER mode
+
+		// Get file header first to determine encryption mode
+		fileHeader, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+			return
+		}
+
+		// Use policy service to determine encryption mode intelligently
+		encryptionMode := policyService.DetermineMode(
+			fileHeader.Filename,
+			fileHeader.Size,
+			encryptionOverride,
+		)
+
+		// Validate USER mode has password
+		if encryptionMode == files.EncryptionUser && encryptionPassword == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "🔐 Verschlüsselung erforderlich",
+				"message": "Diese Datei muss verschlüsselt werden (PDF, Dokumente, etc.). Bitte richte zuerst den Vault ein unter Einstellungen → Vault, oder lade die Datei ohne Verschlüsselung hoch.",
+				"code":    "VAULT_SETUP_REQUIRED",
+				"action":  "Gehe zu Einstellungen → Vault und richte ein Master-Passwort ein.",
+			})
+			return
+		}
+
+		src, err := fileHeader.Open()
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"request_id": requestID,
+				"error":      err.Error(),
+			}).Error("storage: open upload file failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read upload"})
+			return
+		}
+		defer src.Close()
+
+		// Security: MIME Type Validation
+		buff := make([]byte, 512)
+		n, err := src.Read(buff)
+		if err != nil && err != io.EOF {
+			logger.WithError(err).Error("Failed to read file header for MIME detection")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan file"})
+			return
+		}
+
+		detectedType := http.DetectContentType(buff[:n])
+
+		// Reset file pointer
+		if _, err := src.Seek(0, 0); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reset file"})
+			return
+		}
+
+		// Strictly forbid executable content disguised as safe types
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		isImage := ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp"
+
+		if isImage && !strings.HasPrefix(detectedType, "image/") {
+			logger.WithFields(logrus.Fields{
+				"filename":      fileHeader.Filename,
+				"detected_type": detectedType,
+			}).Warn("Security Alert: File disguised as image")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file content"})
+			return
+		}
+
+		// ==== SAVE FILE (with or without encryption) ====
+		var result *content.SaveResult
+
+		if encryptionMode == files.EncryptionNone {
+			// Legacy path: No encryption
+			result, err = storage.Save(path, src, fileHeader)
+		} else {
+			// New path: Hybrid encryption
+			result, err = storage.SaveWithEncryption(c.Request.Context(), path, src, fileHeader, encryptionMode, encryptionPassword)
+		}
+
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		// Log encryption status
+		logger.WithFields(logrus.Fields{
+			"request_id":      requestID,
+			"filename":        fileHeader.Filename,
+			"encryption_mode": encryptionMode,
+			"size_bytes":      result.SizeBytes,
+			"checksum":        result.Checksum,
+		}).Info("File upload completed")
+
+		// ==== AI AGENT NOTIFICATION ====
+		// Only index UNENCRYPTED files (can't index encrypted content!)
+		if encryptionMode == files.EncryptionNone && aiService != nil {
+			var extractedText string
+			if _, err := src.Seek(0, 0); err == nil {
+				const MaxIndexSize = 2 * 1024 * 1024
+				buf := new(bytes.Buffer)
+				io.CopyN(buf, src, MaxIndexSize)
+				extractedText = buf.String()
+			}
+			aiService.NotifyUpload(result.Path, result.FileID, result.MimeType, extractedText)
+		} else {
+			logger.WithField("filename", fileHeader.Filename).Debug("Skipping AI indexing for encrypted file")
+		}
+
+		// Return enhanced response with encryption metadata
+		c.JSON(http.StatusOK, gin.H{
+			"status":            "ok",
+			"encryption_status": encryptionMode,
+			"size_bytes":        result.SizeBytes,
+			"checksum":          result.Checksum,
+		})
+	}
+}
+
+func StorageDownloadHandler(storage content.StorageService, honeySvc content.HoneyfileServiceInterface, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		path := c.Query("path")
+		if path == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+			return
+		}
+
+		// SECURITY: Check for integrity checkpoint BEFORE serving
+		fullPath := resolveStorageFullPath(storage, path)
+
+		// Prepare metadata for audit/forensics
+		// SECURITY FIX: Extract UserID from context for audit logging
+		userIDStr := c.GetString("user_id")
+		var userID *uuid.UUID
+		if id, err := uuid.Parse(userIDStr); err == nil {
+			userID = &id
+		}
+
+		meta := content.RequestMetadata{
+			IPAddress: c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+			UserID:    userID,
+			Action:    "download",
+		}
+
+		if honeySvc != nil && honeySvc.CheckAndTrigger(c.Request.Context(), fullPath, meta) {
+			logger.WithFields(logrus.Fields{
+				"request_id": requestID,
+				"path":       path,
+				"ip":         meta.IPAddress,
+			}).Error("🔒 INTEGRITY VIOLATION - VAULT LOCKED")
+
+			// ACTIVE DEFENSE: Return 403 with misleading error or just 403
+			c.JSON(http.StatusForbidden, gin.H{"error": "file corrupted: integrity check failed"})
+			return
+		}
+
+		file, info, ctype, err := storage.Open(path)
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+		defer file.Close()
+
+		// Gallery thumbs: ?thumb=1&max=256 — avoid shipping multi-MB originals.
+		if c.Query("thumb") == "1" || strings.EqualFold(c.Query("thumb"), "true") {
+			maxPx := parseThumbMax(c.Query("max"))
+			thumb, thumbType, ok, terr := buildImageThumbnail(file, maxPx)
+			if terr != nil {
+				logger.WithError(terr).WithField("path", path).Warn("storage: thumbnail encode failed")
+			}
+			if ok {
+				c.Header("Cache-Control", "private, max-age=86400")
+				c.Data(http.StatusOK, thumbType, thumb)
+				return
+			}
+			// Undecodable (e.g. HEIC/video) — reopen and serve original.
+			_ = file.Close()
+			file, info, ctype, err = storage.Open(path)
+			if err != nil {
+				handleStorageError(c, err, logger, requestID)
+				return
+			}
+			defer file.Close()
+		}
+
+		c.Header("Content-Disposition", contentDisposition("attachment", info.Name()))
+		c.DataFromReader(http.StatusOK, info.Size(), ctype, file, nil)
+	}
+}
+
+func StorageDeleteHandler(storage content.StorageService, aiService intelligence.AIAgentServiceInterface, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		path := c.Query("path")
+		if path == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+			return
+		}
+
+		// Extract fileID for AI agent notification (before deletion!)
+		fileID := filepath.Base(path)
+		fullPath := resolveStorageFullPath(storage, path)
+
+		if err := storage.Delete(path); err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		// AI notify async — sync wait was ~7s and caused double-tap 404s on the client.
+		if aiService != nil {
+			go func(fullPath, fileID string) {
+				if err := aiService.NotifyDelete(context.Background(), fullPath, fileID); err != nil {
+					logger.WithFields(logrus.Fields{
+						"request_id": requestID,
+						"file_path":  fullPath,
+						"file_id":    fileID,
+						"error":      err.Error(),
+					}).Error("SOFT-FAIL: AI agent deletion failed, ghost knowledge may persist")
+				}
+			}(fullPath, fileID)
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+	}
+}
+
+// Max paths accepted per delete-batch request (clients should chunk larger selections).
+const maxBatchDeletePaths = 100
+
+type batchDeleteRequest struct {
+	Paths []string `json:"paths" binding:"required"`
+}
+
+type batchDeleteFailure struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
+// StorageDeleteBatchHandler soft-deletes many paths in one request.
+// AI embedding cleanup runs asynchronously so the client is not blocked ~7s per file.
+func StorageDeleteBatchHandler(storage content.StorageService, aiService intelligence.AIAgentServiceInterface, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+
+		var req batchDeleteRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: paths array required"})
+			return
+		}
+		if len(req.Paths) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no files selected"})
+			return
+		}
+		if len(req.Paths) > maxBatchDeletePaths {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("too many paths (max %d per request)", maxBatchDeletePaths),
+			})
+			return
+		}
+
+		deleted := make([]string, 0, len(req.Paths))
+		failures := make([]batchDeleteFailure, 0)
+
+		for _, raw := range req.Paths {
+			path := strings.TrimSpace(raw)
+			if path == "" || isUnsafePathInput(path) {
+				failures = append(failures, batchDeleteFailure{Path: raw, Error: "invalid path"})
+				continue
+			}
+			if err := storage.Delete(path); err != nil {
+				failures = append(failures, batchDeleteFailure{Path: path, Error: err.Error()})
+				logger.WithFields(logrus.Fields{
+					"request_id": requestID,
+					"path":       path,
+					"error":      err.Error(),
+				}).Warn("storage: batch delete item failed")
+				continue
+			}
+			deleted = append(deleted, path)
+		}
+
+		if aiService != nil && len(deleted) > 0 {
+			pathsCopy := append([]string(nil), deleted...)
+			go func() {
+				for _, path := range pathsCopy {
+					fileID := filepath.Base(path)
+					fullPath := resolveStorageFullPath(storage, path)
+					if err := aiService.NotifyDelete(context.Background(), fullPath, fileID); err != nil {
+						logger.WithFields(logrus.Fields{
+							"path":  path,
+							"error": err.Error(),
+						}).Warn("SOFT-FAIL: AI agent batch deletion notify")
+					}
+				}
+			}()
+		}
+
+		logger.WithFields(logrus.Fields{
+			"request_id": requestID,
+			"deleted":    len(deleted),
+			"failed":     len(failures),
+		}).Info("storage: batch delete completed")
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"deleted": len(deleted),
+			"failed":  len(failures),
+			"errors":  failures,
+		})
+	}
+}
+
+func StorageTrashListHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		items, err := storage.ListTrash()
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items})
+	}
+}
+
+func StorageTrashRestoreHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		id := c.Param("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+			return
+		}
+		if err := storage.RestoreFromTrash(filepath.ToSlash(id)); err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "restored"})
+	}
+}
+
+func StorageTrashDeleteHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		id := c.Param("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+			return
+		}
+		if err := storage.DeleteFromTrash(filepath.ToSlash(id)); err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+	}
+}
+
+// StorageTrashEmptyHandler permanently deletes ALL items from trash
+func StorageTrashEmptyHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+
+		// Get all trash items
+		items, err := storage.ListTrash()
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		deletedCount := 0
+		for _, item := range items {
+			if err := storage.DeleteFromTrash(item.ID); err != nil {
+				logger.WithFields(logrus.Fields{
+					"request_id": requestID,
+					"item_id":    item.ID,
+					"error":      err.Error(),
+				}).Warn("Failed to delete trash item")
+				continue
+			}
+			deletedCount++
+		}
+
+		logger.WithFields(logrus.Fields{
+			"request_id": requestID,
+			"count":      deletedCount,
+		}).Info("Trash emptied")
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "emptied",
+			"deleted": deletedCount,
+		})
+	}
+}
+
+func StorageRenameHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		var req renameRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+			return
+		}
+		if isReservedRootName(req.NewName) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "reserved name"})
+			return
+		}
+		if err := storage.Rename(req.OldPath, req.NewName); err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "renamed"})
+	}
+}
+
+// moveRequest represents the request for moving a file or folder
+type moveRequest struct {
+	SourcePath      string `json:"sourcePath" binding:"required"`
+	DestinationPath string `json:"destinationPath" binding:"required"`
+}
+
+// StorageMoveHandler moves a file or folder to a new location
+func StorageMoveHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		var req moveRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload"})
+			return
+		}
+
+		// Validate source and destination paths
+		if req.SourcePath == "" || req.DestinationPath == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source and destination paths are required"})
+			return
+		}
+
+		// Prevent moving to same location
+		if req.SourcePath == req.DestinationPath {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "source and destination are the same"})
+			return
+		}
+
+		// Get full paths
+		sourceFull, err := storage.GetFullPath(req.SourcePath)
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		destFull, err := storage.GetFullPath(req.DestinationPath)
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		// Check source exists
+		if _, err := os.Stat(sourceFull); os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "source file not found"})
+			return
+		}
+
+		// Check destination parent directory exists
+		destDir := filepath.Dir(destFull)
+		if _, err := os.Stat(destDir); os.IsNotExist(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "destination directory does not exist"})
+			return
+		}
+
+		// Check destination doesn't already exist
+		if _, err := os.Stat(destFull); err == nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "destination already exists"})
+			return
+		}
+
+		// Perform the move
+		if err := os.Rename(sourceFull, destFull); err != nil {
+			logger.WithError(err).WithFields(logrus.Fields{
+				"request_id": requestID,
+				"source":     req.SourcePath,
+				"dest":       req.DestinationPath,
+			}).Error("Failed to move file")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to move file"})
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"request_id": requestID,
+			"source":     req.SourcePath,
+			"dest":       req.DestinationPath,
+		}).Info("File moved successfully")
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "moved",
+			"source": req.SourcePath,
+			"dest":   req.DestinationPath,
+		})
+	}
+}
+
+// StorageDownloadZipHandler downloads a directory as a ZIP file
+func StorageDownloadZipHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+		path := c.Query("path")
+		if path == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+			return
+		}
+
+		// Get the full path for the directory
+		fullPath, err := storage.GetFullPath(path)
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		// Check if it's a directory
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		if !info.IsDir() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path must be a directory"})
+			return
+		}
+
+		// Calculate filename early for headers
+		folderName := filepath.Base(fullPath)
+		if folderName == "" || folderName == "." {
+			folderName = "download"
+		}
+
+		// STREAMING: Write directly to response body to avoid OOM on large directories
+		c.Header("Content-Disposition", contentDisposition("attachment", folderName+".zip"))
+		c.Header("Content-Type", "application/zip")
+		c.Status(http.StatusOK)
+
+		zipWriter := zip.NewWriter(c.Writer)
+		defer zipWriter.Close()
+
+		if err := addDirToZip(zipWriter, fullPath, ""); err != nil {
+			// Cannot write JSON error response if headers are already sent.
+			logger.WithFields(logrus.Fields{
+				"request_id": requestID,
+				"path":       path,
+				"error":      err.Error(),
+			}).Error("storage: failed to stream ZIP")
+			return
+		}
+	}
+}
+
+// batchDownloadRequest represents the request for batch download
+type batchDownloadRequest struct {
+	Paths []string `json:"paths" binding:"required"`
+}
+
+// StorageBatchDownloadHandler downloads multiple files as a ZIP
+func StorageBatchDownloadHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+
+		var req batchDownloadRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: paths array required"})
+			return
+		}
+
+		if len(req.Paths) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no files selected"})
+			return
+		}
+
+		// STREAMING: Write directly to response body
+		c.Header("Content-Disposition", "attachment; filename=\"download.zip\"")
+		c.Header("Content-Type", "application/zip")
+		c.Status(http.StatusOK)
+
+		zipWriter := zip.NewWriter(c.Writer)
+		defer zipWriter.Close()
+
+		for _, path := range req.Paths {
+			fullPath, err := storage.GetFullPath(path)
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"request_id": requestID,
+					"path":       path,
+					"error":      err.Error(),
+				}).Warn("storage: skipping invalid path in batch download")
+				continue
+			}
+
+			// Lstat: a symlink must never be followed out of the user's home.
+			info, err := os.Lstat(fullPath)
+			if err != nil {
+				continue
+			}
+
+			if info.IsDir() {
+				err = addDirToZip(zipWriter, fullPath, filepath.Base(fullPath))
+			} else {
+				err = addFileToZip(zipWriter, fullPath, info, info.Name())
+			}
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"request_id": requestID,
+					"path":       path,
+					"error":      err.Error(),
+				}).Warn("storage: error adding entry to batch ZIP")
+			}
+		}
+	}
+}
+
+// addDirToZip streams the contents of root into zw, with entry names prefixed
+// by prefix. Hidden entries (including .trash) are skipped, and so is anything
+// that is not a regular file or directory: following a symlink could expose
+// files outside the user's home.
+func addDirToZip(zw *zip.Writer, root, prefix string) error {
+	return filepath.Walk(root, func(filePath string, fileInfo os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if filePath == root {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(root, filePath)
+		if err != nil {
+			return err
+		}
+
+		if strings.HasPrefix(filepath.Base(relPath), ".") {
+			if fileInfo.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		zipPath := filepath.ToSlash(filepath.Join(prefix, relPath))
+		if fileInfo.IsDir() {
+			_, err := zw.Create(zipPath + "/")
+			return err
+		}
+		return addFileToZip(zw, filePath, fileInfo, zipPath)
+	})
+}
+
+// addFileToZip adds a single regular file; other file types are silently skipped.
+func addFileToZip(zw *zip.Writer, fullPath string, info os.FileInfo, name string) error {
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = name
+	header.Method = zip.Deflate
+
+	writer, err := zw.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Open(fullPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }() // read-only; close error carries no data loss
+
+	_, err = io.Copy(writer, file)
+	return err
+}
+
+// StorageMkdirHandler creates a new directory
+func StorageMkdirHandler(storage content.StorageService, logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetString("request_id")
+		scoped, ok := scopedStorage(c, storage)
+		if !ok {
+			return
+		}
+		storage := scoped
+
+		var req struct {
+			Path string `json:"path" binding:"required"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "path is required"})
+			return
+		}
+		if isReservedRootCreate(req.Path) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "reserved name"})
+			return
+		}
+
+		if err := storage.Mkdir(req.Path); err != nil {
+			handleStorageError(c, err, logger, requestID)
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "created"})
+	}
+}

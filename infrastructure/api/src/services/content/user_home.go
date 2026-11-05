@@ -1,0 +1,183 @@
+package content
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/google/uuid"
+)
+
+const userHomesDir = "homes"
+
+// ErrInvalidUserID is returned when a user ID cannot address a private home.
+var ErrInvalidUserID = errors.New("invalid user id")
+
+// UserScoper is implemented by storage backends that can confine a
+// StorageService to a single user's private home.
+type UserScoper interface {
+	ScopeToUser(userID string) (StorageService, error)
+}
+
+// UserHomeRel returns the storage-relative home directory for a user.
+func UserHomeRel(userID string) string {
+	return filepath.ToSlash(filepath.Join(userHomesDir, strings.TrimSpace(userID)))
+}
+
+// ForUser returns a storage manager scoped to that user's private home.
+// Client paths stay relative to Home ("" = home root, "Fotos/iPhone" = …/Fotos/iPhone).
+func (s *StorageManager) ForUser(userID string) (*StorageManager, error) {
+	id := strings.TrimSpace(userID)
+	if id == "" {
+		return nil, fmt.Errorf("%w: user id required", ErrInvalidUserID)
+	}
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, ErrInvalidUserID
+	}
+	home := UserHomeRel(id)
+	clone := *s
+	clone.homePrefix = home
+	clone.trashPath = filepath.ToSlash(filepath.Join(home, ".trash"))
+	return &clone, nil
+}
+
+// ScopeToUser returns a StorageService confined to the user's home and makes
+// sure the home tree exists. It implements UserScoper.
+func (s *StorageManager) ScopeToUser(userID string) (StorageService, error) {
+	scoped, err := s.ForUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.EnsureUserHome(userID); err != nil {
+		return nil, err
+	}
+	return scoped, nil
+}
+
+// EnsureUserHome creates the private home tree (idempotent), including the
+// canonical media library path used by iOS Photo Sync.
+func (s *StorageManager) EnsureUserHome(userID string) error {
+	scoped, err := s.ForUser(userID)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	for _, rel := range []string{
+		scoped.homePrefix,
+		filepath.ToSlash(filepath.Join(scoped.homePrefix, MediaLibraryFolder)),
+		filepath.ToSlash(filepath.Join(scoped.homePrefix, MediaLibraryRel)),
+		scoped.trashPath,
+	} {
+		if err := s.store.Mkdir(ctx, rel); err != nil {
+			return fmt.Errorf("ensure home %s: %w", rel, err)
+		}
+	}
+	if err := s.migrateLegacyMediaIfNeeded(userID); err != nil && s.logger != nil {
+		s.logger.WithError(err).WithField("user_id", userID).Warn("legacy media migrate skipped")
+	}
+	return nil
+}
+
+// migrateLegacyMediaIfNeeded moves pre-homes Fotos/iPhone into this user's library
+// when the user library is empty and a legacy shared folder still exists.
+func (s *StorageManager) migrateLegacyMediaIfNeeded(userID string) error {
+	legacyRel := MediaLibraryRel
+	userRel := filepath.ToSlash(filepath.Join(UserHomeRel(userID), MediaLibraryRel))
+
+	legacyFull, err := s.store.GetFullPath(legacyRel)
+	if err != nil {
+		return nil
+	}
+	userFull, err := s.store.GetFullPath(userRel)
+	if err != nil {
+		return err
+	}
+
+	legacyInfo, err := os.Stat(legacyFull)
+	if err != nil || !legacyInfo.IsDir() {
+		return nil
+	}
+	// Only migrate if user media dir is empty.
+	entries, err := os.ReadDir(userFull)
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		return nil
+	}
+	legacyEntries, err := os.ReadDir(legacyFull)
+	if err != nil || len(legacyEntries) == 0 {
+		return nil
+	}
+
+	// Move legacy files into the user library (one-time).
+	for _, e := range legacyEntries {
+		src := filepath.Join(legacyFull, e.Name())
+		dst := filepath.Join(userFull, e.Name())
+		if err := os.Rename(src, dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// mapIn translates a client-relative path into the on-disk path under the user home.
+func (s *StorageManager) mapIn(rel string) (string, error) {
+	if s.homePrefix == "" {
+		return rel, nil
+	}
+	clean := NormalizeClientRelPath(filepath.ToSlash(rel))
+	if clean == "." {
+		clean = ""
+	}
+	if hasDotDotSegment(clean) {
+		return "", ErrPathTraversal
+	}
+	// Never allow addressing another user's home (or the homes/ root) from the client.
+	if clean == userHomesDir || strings.HasPrefix(clean, userHomesDir+"/") {
+		return "", ErrPathTraversal
+	}
+	if clean == "" {
+		return s.homePrefix, nil
+	}
+	return filepath.ToSlash(filepath.Join(s.homePrefix, clean)), nil
+}
+
+// mapOut strips the home prefix so API clients never see homes/{uuid}/…
+func (s *StorageManager) mapOut(absRel string) string {
+	if s.homePrefix == "" {
+		return absRel
+	}
+	p := strings.Trim(filepath.ToSlash(absRel), "/")
+	prefix := strings.Trim(s.homePrefix, "/")
+	if p == prefix {
+		return ""
+	}
+	if strings.HasPrefix(p, prefix+"/") {
+		return strings.TrimPrefix(p, prefix+"/")
+	}
+	return p
+}
+
+func hasDotDotSegment(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureHomeDir makes sure the scoped home exists before the first list/upload.
+func (s *StorageManager) ensureHomeDir() error {
+	if s.homePrefix == "" {
+		return nil
+	}
+	if err := s.store.Mkdir(context.Background(), s.homePrefix); err != nil && !os.IsExist(err) {
+		return err
+	}
+	return nil
+}

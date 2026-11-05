@@ -1,0 +1,18 @@
+[Unit]
+Description=Report UFW/SMB events to NAS-AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Flags and paths live in /etc/default/smb-monitor (chmod 600):
+#   SMB_MONITOR_ENABLED=true
+#   MONITORING_TOKEN_FILE=/path/to/existing/secrets-file
+EnvironmentFile=-/etc/default/smb-monitor
+ExecStart=/home/nasserver/bin/smb-monitor.sh
+StateDirectory=smb-monitor
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes

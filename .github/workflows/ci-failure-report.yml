@@ -1,0 +1,53 @@
+name: CI failure report
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect failed jobs and report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          if [ -z "$PR_NUMBER" ] && [ "$EVENT" = "pull_request" ]; then
+            PR_NUMBER=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+              --jq "[.[] | select(.head.sha==\"$SHA\")][0].number // empty")
+          fi
+
+          if [ -z "$PR_NUMBER" ] && [ "$EVENT" = "pull_request" ] && [ -n "$HEAD_REPO" ] && [ -n "$HEAD_OWNER" ]; then
+            PR_NUMBER=$(gh api "repos/$REPO/pulls" \
+              --field state=all \
+              --field head="$HEAD_OWNER:$BRANCH" \
+              --jq "[.[] | select(.head.sha==\"$SHA\" and .head.repo.full_name==\"$HEAD_REPO\")][0].number // empty")
+          fi
+
+          failed=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion=="failure") | "- [\(.name)](\(.html_url))"')
+          body=$(printf '❌ CI failed for `%s` (%s)\n\nFailed jobs:\n%s\n\n[Run](%s)' \
+            "${SHA:0:7}" "$BRANCH" "$failed" "$RUN_URL")
+
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$body"
+          elif [ "$EVENT" = "push" ]; then
+            gh issue create --repo "$REPO" --title "CI failed on $BRANCH (${SHA:0:7})" --body "$body"
+          fi
