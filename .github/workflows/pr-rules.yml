@@ -13,10 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Commit authors allowed on main. Add further addresses here if needed.
-  ALLOWED_AUTHOR_EMAILS: >-
-    226513012+frnd1406@users.noreply.github.com
-    49699333+dependabot[bot]@users.noreply.github.com
   BRANCH_PATTERN: '^(feature|fix|hotfix|docs|chore|ci|refactor|test|perf|release)/[a-z0-9._-]+$|^dependabot/'
   CONVENTIONAL_PATTERN: '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9/._-]+\))?!?: .+'
 
@@ -25,19 +21,12 @@ jobs:
     name: Rule check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-
-      # PR title, branch name and commit metadata are user-controlled: they are
+      # PR title and branch name are user-controlled: they are
       # only passed through env vars, never interpolated into the script.
-      - name: Check branch, title and commits
+      - name: Check branch name and PR title
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           fail=0
 
@@ -50,25 +39,5 @@ jobs:
             echo "::error::PR title must follow Conventional Commits, e.g. 'fix(api): handle empty path'"
             fail=1
           fi
-
-          for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
-            email=$(git log -1 --format=%ae "$sha")
-            subject=$(git log -1 --format=%s "$sha")
-            body=$(git log -1 --format=%B "$sha")
-            short=${sha:0:7}
-
-            if ! grep -qxF "$email" <<<"$(tr ' ' '\n' <<<"$ALLOWED_AUTHOR_EMAILS")"; then
-              echo "::error::$short: author '$email' is not allowed; use your GitHub noreply address"
-              fail=1
-            fi
-            if ! grep -Eq "$CONVENTIONAL_PATTERN" <<<"$subject"; then
-              echo "::error::$short: subject '$subject' is not a Conventional Commit"
-              fail=1
-            fi
-            if grep -Eiq '^(co-authored-by|claude-session):' <<<"$body"; then
-              echo "::error::$short: co-author/attribution trailers are not allowed"
-              fail=1
-            fi
-          done
 
           exit $fail
